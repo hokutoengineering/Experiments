@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Path Tracer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #222;
+            color: #fff;
+        }
+        canvas {
+            border: 1px solid #444;
+            display: block;
+            margin: 20px auto;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .info {
+            text-align: center;
+            font-size: 14px;
+            color: #aaa;
+        }
+        .controls input[type="range"] {
+            width: 150px;
+            margin: 0 10px;
+        }
+        .controls label {
+            margin: 0 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button id="startBtn">Start Rendering</button>
+        <button id="resetBtn">Reset</button>
+    </div>
+    <div class="controls">
+        <label for="maxBounces">Max Ray Bounces: </label>
+        <input type="range" id="maxBounces" min="0" max="10" value="5" step="1">
+        <span id="bouncesValue">5</span>
+    </div>
+    <canvas id="canvas" width="512" height="512"></canvas>
+    <div class="info">
+        <div>Samples: <span id="samples">0</span></div>
+        <div>Path Tracer with MIS (Next Event Estimation + BRDF Sampling)</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        let imageData = ctx.createImageData(width, height);
+        let accumBuffer = new Float32Array(width * height * 3);
+        let sampleCount = 0;
+        let rendering = false;
+        let maxBounces = 5;
+
+        // Vector operations
+        class Vec3 {
+            constructor(x = 0, y = 0, z = 0) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+            }
+
+            add(v) {
+                return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z);
+            }
+
+            sub(v) {
+                return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z);
+            }
+
+            mul(s) {
+                return new Vec3(this.x * s, this.y * s, this.z * s);
+            }
+
+            mulVec(v) {
+                return new Vec3(this.x * v.x, this.y * v.y, this.z * v.z);
+            }
+
+            dot(v) {
+                return this.x * v.x + this.y * v.y + this.z * v.z;
+            }
+
+            cross(v) {
+                return new Vec3(
+                    this.y * v.z - this.z * v.y,
+                    this.z * v.x - this.x * v.z,
+                    this.x * v.y - this.y * v.x
+                );
+            }
+
+            length() {
+                return Math.sqrt(this.dot(this));
+            }
+
+            normalize() {
+                const len = this.length();
+                return len > 0 ? this.mul(1 / len) : new Vec3(0, 0, 0);
+            }
+        }
+
+        // Ray
+        class Ray {
+            constructor(origin, direction) {
+                this.origin = origin;
+                this.direction = direction.normalize();
+            }
+
+            at(t) {
+                return this.origin.add(this.direction.mul(t));
+            }
+        }
+
+        // Sphere
+        class Sphere {
+            constructor(center, radius, color, emission = new Vec3(0, 0, 0)) {
+                this.center = center;
+                this.radius = radius;
+                this.color = color;
+                this.emission = emission;
+            }
+
+            intersect(ray) {
+                const oc = ray.origin.sub(this.center);
+                const a = ray.direction.dot(ray.direction);
+                const b = 2 * oc.dot(ray.direction);
+                const c = oc.dot(oc) - this.radius * this.radius;
+                const discriminant = b * b - 4 * a * c;
+
+                if (discriminant < 0) return -1;
+
+                const t1 = (-b - Math.sqrt(discriminant)) / (2 * a);
+                const t2 = (-b + Math.sqrt(discriminant)) / (2 * a);
+
+                if (t1 > 0.001) return t1;
+                if (t2 > 0.001) return t2;
+                return -1;
+            }
+
+            getNormal(point) {
+                return point.sub(this.center).normalize();
+            }
+        }
+
+        // Plane (for box walls)
+        class Plane {
+            constructor(point, normal, color, emission = new Vec3(0, 0, 0)) {
+                this.point = point;
+                this.normal = normal.normalize();
+                this.color = color;
+                this.emission = emission;
+            }
+
+            intersect(ray) {
+                const denom = this.normal.dot(ray.direction);
+                if (Math.abs(denom) > 0.0001) {
+                    const t = this.point.sub(ray.origin).dot(this.normal) / denom;
+                    if (t > 0.001) return t;
+                }
+                return -1;
+            }
+
+            getNormal(point) {
+                return this.normal;
+            }
+        }
+
+        // Rectangle (for finite area light)
+        class Rectangle {
+            constructor(center, width, height, normal, color, emission = new Vec3(0, 0, 0)) {
+                this.center = center;
+                this.width = width;
+                this.height = height;
+                this.normal = normal.normalize();
+                this.color = color;
+                this.emission = emission;
+
+                // Create basis vectors
+                const up = Math.abs(normal.y) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
+                this.u = up.cross(normal).normalize();
+                this.v = normal.cross(this.u).normalize();
+            }
+
+            intersect(ray) {
+                const denom = this.normal.dot(ray.direction);
+                if (Math.abs(denom) > 0.0001) {
+                    const t = this.center.sub(ray.origin).dot(this.normal) / denom;
+                    if (t > 0.001) {
+                        // Check if hit point is within rectangle bounds
+                        const hitPoint = ray.at(t);
+                        const toHit = hitPoint.sub(this.center);
+                        const uCoord = toHit.dot(this.u);
+                        const vCoord = toHit.dot(this.v);
+
+                        if (Math.abs(uCoord) <= this.width / 2 && Math.abs(vCoord) <= this.height / 2) {
+                            return t;
+                        }
+                    }
+                }
+                return -1;
+            }
+
+            getNormal(point) {
+                return this.normal;
+            }
+        }
+
+        // Area Light (rectangle on ceiling)
+        class AreaLight {
+            constructor(center, width, height, normal, emission) {
+                this.center = center;
+                this.width = width;
+                this.height = height;
+                this.normal = normal.normalize();
+                this.emission = emission;
+
+                // Create basis vectors for the light
+                const up = Math.abs(normal.y) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
+                this.u = up.cross(normal).normalize();
+                this.v = normal.cross(this.u).normalize();
+            }
+
+            sample() {
+                const u = (Math.random() - 0.5) * this.width;
+                const v = (Math.random() - 0.5) * this.height;
+                return this.center.add(this.u.mul(u)).add(this.v.mul(v));
+            }
+
+            area() {
+                return this.width * this.height;
+            }
+
+            // Check if a point is on the light surface
+            isOnLight(point) {
+                const toPoint = point.sub(this.center);
+                const distToPlane = Math.abs(toPoint.dot(this.normal));
+                if (distToPlane > 0.01) return false;
+
+                const uCoord = toPoint.dot(this.u);
+                const vCoord = toPoint.dot(this.v);
+
+                return Math.abs(uCoord) <= this.width / 2 && Math.abs(vCoord) <= this.height / 2;
+            }
+
+            // PDF for sampling a point on the light
+            pdfArea() {
+                return 1.0 / this.area();
+            }
+
+            // PDF for a direction from a point to the light
+            pdfSolidAngle(from, lightPoint, lightNormal) {
+                const toLight = lightPoint.sub(from);
+                const distSq = toLight.dot(toLight);
+                const cosTheta = Math.abs(toLight.normalize().dot(lightNormal));
+
+                if (cosTheta < 0.0001) return 0;
+
+                return distSq / (cosTheta * this.area());
+            }
+        }
+
+        // Scene setup
+        const white = new Vec3(0.8, 0.8, 0.8);
+        const red = new Vec3(0.8, 0.2, 0.2);
+        const green = new Vec3(0.2, 0.8, 0.2);
+        const blue = new Vec3(0.2, 0.2, 0.8);
+
+        // Area light on ceiling (defined first so we can reference it)
+        const lightEmission = new Vec3(5, 5, 5);
+        const areaLight = new AreaLight(
+            new Vec3(0, 4.99, -2.5),
+            1.5,
+            1.5,
+            new Vec3(0, -1, 0),
+            lightEmission
+        );
+
+        const objects = [
+            // Cornell box walls
+            new Plane(new Vec3(0, 0, 0), new Vec3(0, 1, 0), white),      // Floor
+            new Plane(new Vec3(0, 5, 0), new Vec3(0, -1, 0), white),     // Ceiling
+            new Plane(new Vec3(0, 0, -5), new Vec3(0, 0, 1), white),     // Back wall
+            new Plane(new Vec3(-2.5, 0, 0), new Vec3(1, 0, 0), red),     // Left wall
+            new Plane(new Vec3(2.5, 0, 0), new Vec3(-1, 0, 0), green),   // Right wall
+
+            // Area light (visible rectangle on ceiling)
+            new Rectangle(areaLight.center, areaLight.width, areaLight.height,
+                         areaLight.normal, white, lightEmission),
+
+            // Spheres
+            new Sphere(new Vec3(-1, 0.7, -2), 0.7, white),
+            new Sphere(new Vec3(1, 0.5, -3), 0.5, blue),
+            new Sphere(new Vec3(0, 0.4, -1), 0.4, new Vec3(0.9, 0.9, 0.2)),
+        ];
+
+
+        // Camera
+        const cameraPos = new Vec3(0, 2.5, 3);
+        const cameraLookAt = new Vec3(0, 2, -2.5);
+        const cameraUp = new Vec3(0, 1, 0);
+
+        const cameraDir = cameraLookAt.sub(cameraPos).normalize();
+        const cameraRight = cameraDir.cross(cameraUp).normalize();
+        const cameraUpNorm = cameraRight.cross(cameraDir).normalize();
+
+        // Random number helpers
+        function random() {
+            return Math.random();
+        }
+
+        function randomInHemisphere(normal) {
+            // Cosine-weighted hemisphere sampling
+            const r1 = random();
+            const r2 = random();
+            const phi = 2 * Math.PI * r1;
+            const sinTheta = Math.sqrt(r2);
+            const cosTheta = Math.sqrt(1 - r2);
+
+            const x = Math.cos(phi) * sinTheta;
+            const y = Math.sin(phi) * sinTheta;
+            const z = cosTheta;
+
+            // Create basis from normal
+            const up = Math.abs(normal.y) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
+            const tangent = up.cross(normal).normalize();
+            const bitangent = normal.cross(tangent);
+
+            return tangent.mul(x).add(bitangent.mul(y)).add(normal.mul(z));
+        }
+
+        // Scene intersection
+        function intersectScene(ray) {
+            let closest = { t: Infinity, obj: null };
+
+            for (const obj of objects) {
+                const t = obj.intersect(ray);
+                if (t > 0 && t < closest.t) {
+                    closest = { t, obj };
+                }
+            }
+
+            return closest;
+        }
+
+        // Check visibility to light
+        function isVisible(from, to) {
+            const dir = to.sub(from);
+            const dist = dir.length();
+            const ray = new Ray(from, dir.normalize());
+
+            for (const obj of objects) {
+                const t = obj.intersect(ray);
+                if (t > 0.001 && t < dist - 0.001) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Power heuristic for MIS (power = 2)
+        function powerHeuristic(pdfA, pdfB) {
+            if (pdfA === 0 && pdfB === 0) return 0;
+            const a = pdfA * pdfA;
+            const b = pdfB * pdfB;
+            const sum = a + b;
+            if (sum === 0) return 0;
+            return a / sum;
+        }
+
+        // Check if a color is valid (no NaN or Infinity)
+        function isValidColor(c) {
+            return isFinite(c.x) && isFinite(c.y) && isFinite(c.z);
+        }
+
+        // Clamp color to valid range
+        function clampColor(c) {
+            const x = isFinite(c.x) ? Math.max(0, c.x) : 0;
+            const y = isFinite(c.y) ? Math.max(0, c.y) : 0;
+            const z = isFinite(c.z) ? Math.max(0, c.z) : 0;
+            return new Vec3(x, y, z);
+        }
+
+        // PDF for cosine-weighted hemisphere sampling
+        function cosinePdfHemisphere(cosTheta) {
+            return cosTheta / Math.PI;
+        }
+
+        // Path tracing with MIS
+        function trace(ray, depth = 0, lastSpecular = true) {
+            if (depth >= maxBounces) return new Vec3(0, 0, 0);
+
+            const hit = intersectScene(ray);
+            if (!hit.obj) return new Vec3(0.1, 0.1, 0.15); // Sky color
+
+            const hitPoint = ray.at(hit.t);
+            const normal = hit.obj.getNormal(hitPoint);
+            const albedo = hit.obj.color;
+            const emission = hit.obj.emission;
+
+            let color = new Vec3(0, 0, 0);
+
+            // Add emission if we hit a light (only if last bounce was specular or this is primary ray)
+            // This prevents double-counting when we use NEE
+            if (lastSpecular) {
+                color = color.add(emission);
+            }
+
+            // Explicit light sampling (Next Event Estimation) with MIS
+            const lightSample = areaLight.sample();
+            const toLight = lightSample.sub(hitPoint);
+            const distToLight = toLight.length();
+            const lightDir = toLight.normalize();
+            const cosTheta = Math.max(0, normal.dot(lightDir));
+            const cosLightNormal = Math.max(0, areaLight.normal.dot(lightDir.mul(-1)));
+
+            if (cosTheta > 0.0001 && cosLightNormal > 0.0001 && isVisible(hitPoint, lightSample)) {
+                // PDF of sampling this direction via light sampling
+                const pdfLight = areaLight.pdfSolidAngle(hitPoint, lightSample, areaLight.normal);
+
+                // PDF of sampling this direction via BRDF sampling (cosine-weighted hemisphere)
+                const pdfBRDF = cosinePdfHemisphere(cosTheta);
+
+                if (pdfLight > 0 && isFinite(pdfLight)) {
+                    // MIS weight using power heuristic
+                    const weight = powerHeuristic(pdfLight, pdfBRDF);
+
+                    // Explicit contribution
+                    const brdf = albedo.mul(1.0 / Math.PI); // Lambertian BRDF
+                    const Li = areaLight.emission;
+                    const directLight = brdf.mulVec(Li).mul(cosTheta / pdfLight * weight);
+
+                    if (isValidColor(directLight)) {
+                        color = color.add(directLight);
+                    }
+                }
+            }
+
+            // Russian roulette
+            const surviveProb = Math.min(0.95, Math.max(albedo.x, albedo.y, albedo.z));
+            if (random() > surviveProb) return color;
+
+            // Implicit light sampling (BRDF sampling) with MIS
+            const bounceDir = randomInHemisphere(normal);
+            const cosTheta2 = Math.max(0, normal.dot(bounceDir));
+
+            if (cosTheta2 > 0.0001) {
+                const bounceRay = new Ray(hitPoint, bounceDir);
+                const bounceHit = intersectScene(bounceRay);
+
+                if (bounceHit.obj) {
+                    const bouncePoint = bounceRay.at(bounceHit.t);
+
+                    // Check if we hit the light
+                    if (areaLight.isOnLight(bouncePoint)) {
+                        // We hit the light via BRDF sampling
+                        // PDF of sampling this direction via BRDF sampling
+                        const pdfBRDF = cosinePdfHemisphere(cosTheta2);
+
+                        // PDF of sampling this direction via light sampling
+                        const pdfLight = areaLight.pdfSolidAngle(hitPoint, bouncePoint, areaLight.normal);
+
+                        if (pdfBRDF > 0 && isFinite(pdfLight)) {
+                            // MIS weight
+                            const weight = powerHeuristic(pdfBRDF, pdfLight);
+
+                            // Implicit contribution
+                            const brdf = albedo.mul(1.0 / Math.PI);
+                            const Li = areaLight.emission;
+                            const implicitLight = brdf.mulVec(Li).mul(cosTheta2 / pdfBRDF * weight * (1 / surviveProb));
+
+                            if (isValidColor(implicitLight)) {
+                                color = color.add(implicitLight);
+                            }
+                        }
+                    } else {
+                        // Recursive call for indirect illumination
+                        const indirect = trace(bounceRay, depth + 1, false);
+                        const brdf = albedo.mul(1.0 / Math.PI);
+                        const pdfBRDF = cosinePdfHemisphere(cosTheta2);
+
+                        if (pdfBRDF > 0) {
+                            const contribution = brdf.mulVec(indirect).mul(cosTheta2 / pdfBRDF * (1 / surviveProb));
+                            if (isValidColor(contribution)) {
+                                color = color.add(contribution);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return clampColor(color);
+        }
+
+        // Generate camera ray
+        function getCameraRay(x, y) {
+            const aspect = width / height;
+            const fov = Math.PI / 3;
+            const scale = Math.tan(fov / 2);
+
+            const px = (2 * (x + random()) / width - 1) * aspect * scale;
+            const py = (1 - 2 * (y + random()) / height) * scale;
+
+            const dir = cameraDir.add(cameraRight.mul(px)).add(cameraUpNorm.mul(py)).normalize();
+            return new Ray(cameraPos, dir);
+        }
+
+        // Render one sample
+        function renderSample() {
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const ray = getCameraRay(x, y);
+                    let color = trace(ray);
+
+                    // Safety check for NaN/Infinity
+                    if (!isValidColor(color)) {
+                        color = new Vec3(0, 0, 0);
+                    }
+
+                    const idx = (y * width + x) * 3;
+                    accumBuffer[idx] += color.x;
+                    accumBuffer[idx + 1] += color.y;
+                    accumBuffer[idx + 2] += color.z;
+                }
+            }
+            sampleCount++;
+            updateDisplay();
+        }
+
+        // Update canvas
+        function updateDisplay() {
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 3;
+                    const pixelIdx = (y * width + x) * 4;
+
+                    const r = accumBuffer[idx] / sampleCount;
+                    const g = accumBuffer[idx + 1] / sampleCount;
+                    const b = accumBuffer[idx + 2] / sampleCount;
+
+                    // Gamma correction
+                    imageData.data[pixelIdx] = Math.min(255, Math.pow(r, 1/2.2) * 255);
+                    imageData.data[pixelIdx + 1] = Math.min(255, Math.pow(g, 1/2.2) * 255);
+                    imageData.data[pixelIdx + 2] = Math.min(255, Math.pow(b, 1/2.2) * 255);
+                    imageData.data[pixelIdx + 3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+            document.getElementById('samples').textContent = sampleCount;
+        }
+
+        // Rendering loop
+        function renderLoop() {
+            if (rendering) {
+                renderSample();
+                setTimeout(renderLoop, 0);
+            }
+        }
+
+        // Controls
+        document.getElementById('startBtn').addEventListener('click', () => {
+            rendering = !rendering;
+            document.getElementById('startBtn').textContent = rendering ? 'Pause' : 'Start Rendering';
+            if (rendering) renderLoop();
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            accumBuffer.fill(0);
+            sampleCount = 0;
+            updateDisplay();
+        });
+
+        // Max bounces slider control
+        const maxBouncesInput = document.getElementById('maxBounces');
+        const bouncesValueDisplay = document.getElementById('bouncesValue');
+        maxBouncesInput.addEventListener('input', (e) => {
+            maxBounces = parseInt(e.target.value);
+            bouncesValueDisplay.textContent = maxBounces;
+            // Reset when bounces change to avoid artifacts
+            accumBuffer.fill(0);
+            sampleCount = 0;
+            updateDisplay();
+        });
+        // Initialize display value
+        bouncesValueDisplay.textContent = maxBounces;
+
+        // Initial display
+        updateDisplay();
+    </script>
+</body>
+</html>
