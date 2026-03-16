@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Puyo Puyo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  body {
+    font-family: 'Poppins', sans-serif;
+    background: #141E30;
+    background-image: linear-gradient(to top, #243B55 0%, #141E30 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    color: #E0E0E0;
+  }
+  #game-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 30px;
+    padding: 20px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 15px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  canvas {
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  }
+  #gameCanvas {
+    background-color: #2c3e50;
+  }
+  #game-info {
+    font-size: 1em;
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.1); /* Slightly darker for distinction */
+    padding: 15px;
+    border-radius: 10px;
+  }
+  #game-info h2, #game-info h3, #game-info #highScoresContainer {
+    margin: 15px 0 10px 0; /* Add top margin for spacing */
+    font-weight: 600;
+  }
+  #game-info h3 {
+    margin-top: 20px;
+  }
+  #game-info span {
+    font-weight: 400;
+  }
+  #nextPuyoControl { /* New style for the wrapper */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px; /* Spacing between next puyo canvas and pause button */
+    margin-top: 20px; /* Space between "Chain" and "Next" section */
+  }
+  #pauseButton { /* Moved from inline style */
+      /* Removed margin-top: 20px; handled by parent gap */
+      padding: 10px 20px;
+      font-size: 1em;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      outline: none;
+      transition: background-color 0.2s ease;
+  }
+  #pauseButton:hover {
+      background-color: #218838; /* Darken on hover */
+  }
+  #nextCanvas {
+    background-color: #34495e;
+  }
+  #game-over-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: none;
+    justify-content: center;
+    align-items: center;
+  }
+  #game-over {
+    font-size: 4em;
+    color: white;
+    font-weight: 600;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+  }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="gameCanvas" width="300" height="600"></canvas>
+  <div id="game-info">
+    <h2>Score: <span id="score">0</span></h2>
+    <h2>Chain: <span id="chain">0</span></h2>
+    <div id="nextPuyoControl">
+      <h3>Next:</h3>
+      <canvas id="nextCanvas" width="100" height="100"></canvas>
+      <button id="pauseButton">Pause</button>
+    </div>
+    <div id="highScoresContainer">
+      <h3>High Scores:</h3>
+      <ul id="highScoresList"></ul>
+    </div>
+  </div>
+</div>
+<div id="game-over-container">
+    <div id="game-over">Game Over</div>
+</div>
+
+<script>
+const DOM = {
+    canvas: document.getElementById('gameCanvas'),
+    ctx: document.getElementById('gameCanvas').getContext('2d'),
+    scoreEl: document.getElementById('score'),
+    chainEl: document.getElementById('chain'),
+    gameOverContainer: document.getElementById('game-over-container'),
+    nextCanvas: document.getElementById('nextCanvas'),
+    nextCtx: document.getElementById('nextCanvas').getContext('2d'),
+    pauseButton: document.getElementById('pauseButton'),
+    highScoresList: document.getElementById('highScoresList'), // Also include this for consistency
+};
+let isPaused = false; // New: To track game pause state
+
+const COLS = 6;
+const ROWS = 12;
+const BLOCK_SIZE = 50;
+const CHAIN_DELAY = 300; // ms delay between chain steps
+
+DOM.canvas.width = COLS * BLOCK_SIZE;
+DOM.canvas.height = ROWS * BLOCK_SIZE;
+
+const COLORS = {
+    'red': '#e74c3c',
+    'green': '#2ecc71',
+    'blue': '#3498db',
+    'yellow': '#f1c40f',
+    'purple': '#9b59b6'
+};
+const COLOR_KEYS = Object.keys(COLORS);
+
+let board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+let currentPuyo;
+let nextPuyo;
+let score = 0;
+let chain = 0;
+let gameOver = false;
+let isProcessingChain = false;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Function to draw a single puyo as a circle with a highlight
+function drawPuyo(drawCtx, x, y, color, size) {
+    if (!color) return;
+
+    const radius = size / 2;
+    const centerX = x + radius;
+    const centerY = y + radius;
+
+    // Main puyo color
+    drawCtx.fillStyle = COLORS[color];
+    drawCtx.beginPath();
+    drawCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    drawCtx.fill();
+
+    // Highlight
+    drawCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    drawCtx.beginPath();
+    drawCtx.arc(centerX - radius * 0.2, centerY - radius * 0.2, radius * 0.6, 0, 2 * Math.PI);
+    drawCtx.fill();
+}
+
+
+class Puyo {
+    constructor(x, y, color1, color2) {
+        this.x = x;
+        this.y = y;
+        this.puyo1 = { x: 0, y: 0, color: color1 };
+        this.puyo2 = { x: 0, y: -1, color: color2 };
+        this.rotation = 0;
+    }
+
+    draw() {
+        drawPuyo(DOM.ctx, (this.x + this.puyo1.x) * BLOCK_SIZE, (this.y + this.puyo1.y) * BLOCK_SIZE, this.puyo1.color, BLOCK_SIZE);
+        drawPuyo(DOM.ctx, (this.x + this.puyo2.x) * BLOCK_SIZE, (this.y + this.puyo2.y) * BLOCK_SIZE, this.puyo2.color, BLOCK_SIZE);
+    }
+    
+    async move(dx, dy) {
+        if (isProcessingChain || isPaused) return; // Added isPaused check
+        if (!this.collides(dx, dy)) {
+            this.x += dx;
+            this.y += dy;
+        } else {
+            if (dy === 1) {
+                await this.lock();
+            }
+        }
+    }
+
+    rotate() {
+        if (isProcessingChain || isPaused) return; // Added isPaused check
+        const nextRotation = (this.rotation + 1) % 4;
+        let newPuyo2Pos = {x: this.puyo2.x, y: this.puyo2.y};
+
+        switch (nextRotation) {
+            case 0: newPuyo2Pos = { x: 0, y: -1 }; break;
+            case 1: newPuyo2Pos = { x: 1, y: 0 }; break;
+            case 2: newPuyo2Pos = { x: 0, y: 1 }; break;
+            case 3: newPuyo2Pos = { x: -1, y: 0 }; break;
+        }
+
+        if (!this.collides(0, 0, newPuyo2Pos)) {
+            this.puyo2.x = newPuyo2Pos.x;
+            this.puyo2.y = newPuyo2Pos.y;
+            this.rotation = nextRotation;
+        }
+    }
+
+    collides(dx, dy, puyo2Pos = this.puyo2) {
+        const newX = this.x + dx;
+        const newY = this.y + dy;
+
+        const p1x = newX + this.puyo1.x;
+        const p1y = newY + this.puyo1.y;
+        const p2x = newX + puyo2Pos.x;
+        const p2y = newY + puyo2Pos.y;
+
+        return (
+            p1x < 0 || p1x >= COLS || p1y >= ROWS || (p1y >= 0 && board[p1y][p1x] !== 0) ||
+            p2x < 0 || p2x >= COLS || p2y >= ROWS || (p2y >= 0 && board[p2y][p2x] !== 0)
+        );
+    }
+
+    async lock() {
+        isProcessingChain = true;
+        currentPuyo = null;
+
+        const p1x = this.x + this.puyo1.x;
+        const p1y = this.y + this.puyo1.y;
+        const p2x = this.x + this.puyo2.x;
+        const p2y = this.y + this.puyo2.y;
+
+        if (p1y >= 0) board[p1y][p1x] = this.puyo1.color;
+        if (p2y >= 0) board[p2y][p2x] = this.puyo2.color;
+        
+        await handleChainReaction();
+        
+        if (!gameOver) {
+            spawnPuyo();
+        }
+        isProcessingChain = false;
+    }
+}
+
+function applyGravity() {
+    for (let x = 0; x < COLS; x++) {
+        let emptyRow = ROWS - 1;
+        for (let y = ROWS - 1; y >= 0; y--) {
+            if (board[y][x] !== 0) {
+                if (y !== emptyRow) {
+                    [board[emptyRow][x], board[y][x]] = [board[y][x], board[emptyRow][x]];
+                }
+                emptyRow--;
+            }
+        }
+    }
+}
+
+function spawnPuyo() {
+    currentPuyo = nextPuyo;
+    currentPuyo.x = Math.floor(COLS / 2) - 1; // Center adjustment
+    currentPuyo.y = 0;
+
+    const color1 = COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
+    const color2 = COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
+    nextPuyo = new Puyo(0, 0, color1, color2);
+    
+    if (currentPuyo.collides(0,0)) {
+        gameOver = true;
+        DOM.gameOverContainer.style.display = 'flex';
+        DOM.gameOverContainer.querySelector('#game-over').textContent = `Game Over! Score: ${score}`;
+        addHighScore(score, new Date());
+        displayHighScores();
+        currentPuyo = null;
+    }
+}
+
+function drawBoard(clearingPuyos = new Set()) {
+    DOM.ctx.clearRect(0, 0, DOM.canvas.width, DOM.canvas.height);
+    board.forEach((row, y) => {
+        row.forEach((color, x) => {
+            if (color !== 0) {
+                 if (clearingPuyos.has(`${x},${y}`)) {
+                    DOM.ctx.globalAlpha = 0.5;
+                } else {
+                    DOM.ctx.globalAlpha = 1.0;
+                }
+                drawPuyo(DOM.ctx, x * BLOCK_SIZE, y * BLOCK_SIZE, color, BLOCK_SIZE);
+            }
+        });
+    });
+    DOM.ctx.globalAlpha = 1.0;
+}
+
+function drawNextPuyo() {
+    DOM.nextCtx.clearRect(0, 0, DOM.nextCanvas.width, DOM.nextCanvas.height);
+    if (!nextPuyo) return;
+
+    const puyoSize = 40;
+    const drawX = DOM.nextCanvas.width / 2 - puyoSize / 2;
+    const drawY = DOM.nextCanvas.height / 2 - puyoSize;
+
+    drawPuyo(DOM.nextCtx, drawX, drawY + puyoSize, nextPuyo.puyo1.color, puyoSize);
+    drawPuyo(DOM.nextCtx, drawX, drawY, nextPuyo.puyo2.color, puyoSize);
+}
+
+
+function findMatches() {
+    const toClear = new Set();
+    const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (board[y][x] !== 0 && !visited[y][x]) {
+                const color = board[y][x];
+                const group = [];
+                const queue = [{x, y}];
+                visited[y][x] = true;
+                
+                while (queue.length > 0) {
+                    const { x: cx, y: cy } = queue.shift();
+                    group.push({x: cx, y: cy});
+
+                    [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(([dx, dy]) => {
+                        const nx = cx + dx;
+                        const ny = cy + dy;
+
+                        if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
+                            !visited[ny][nx] && board[ny][nx] === color) {
+                            visited[ny][nx] = true;
+                            queue.push({x: nx, y: ny});
+                        }
+                    });
+                }
+                if (group.length >= 4) {
+                    group.forEach(p => toClear.add(`${p.x},${p.y}`));
+                }
+            }
+        }
+    }
+    return toClear;
+}
+
+async function handleChainReaction() {
+    let chainThisTurn = 0;
+    while(true) {
+        applyGravity();
+        // Redraw board after gravity
+        drawBoard();
+        drawNextPuyo();
+        await sleep(CHAIN_DELAY);
+
+        const toClear = findMatches();
+        if (toClear.size === 0) {
+            if (chainThisTurn > 0) {
+                chain = 0;
+                DOM.chainEl.textContent = 0;
+            }
+            break; 
+        }
+
+        chainThisTurn++;
+        chain = chainThisTurn;
+        DOM.chainEl.textContent = chain;
+        score += toClear.size * 10 * (chainThisTurn * 2);
+        DOM.scoreEl.textContent = score;
+
+        // Blinking Animation
+        const blinks = 2;
+        const blinkDuration = 150;
+        for (let i = 0; i < blinks; i++) {
+            drawBoard(toClear);
+            drawNextPuyo();
+            await sleep(blinkDuration);
+            drawBoard();
+            drawNextPuyo();
+            await sleep(blinkDuration);
+        }
+        
+        toClear.forEach(p => {
+            const [x, y] = p.split(',').map(Number);
+            board[y][x] = 0;
+        });
+    }
+}
+
+
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
+
+// Difficulty management variables
+let level = 1;
+const levelUpInterval = 20000; // Increase difficulty every 20 seconds of gameplay
+let timePassedSinceLastLevelUp = 0;
+const initialDropInterval = 1000; // Starting drop interval
+const minDropInterval = 100; // Minimum drop interval (max speed)
+
+function update(time = 0) {
+    if (gameOver || isPaused) return;
+
+    const deltaTime = time - lastTime;
+    lastTime = time;
+    
+    timePassedSinceLastLevelUp += deltaTime;
+    if (timePassedSinceLastLevelUp >= levelUpInterval) {
+        level++;
+        dropInterval = Math.max(minDropInterval, initialDropInterval - (level * 50)); // Decrease drop interval
+        timePassedSinceLastLevelUp = 0;
+        console.log(`Level Up! Level: ${level}, Drop Interval: ${dropInterval}`); // For debugging
+    }
+
+    if (!isProcessingChain && currentPuyo) {
+        dropCounter += deltaTime;
+        if (dropCounter > dropInterval) {
+            currentPuyo.move(0, 1);
+            dropCounter = 0;
+        }
+    }
+
+    // Only draw in the main loop if a chain is not being processed
+    if (!isProcessingChain) {
+        drawBoard();
+        drawNextPuyo();
+        if (currentPuyo) {
+            currentPuyo.draw();
+        }
+    }
+
+    requestAnimationFrame(update);
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    DOM.pauseButton.textContent = isPaused ? 'Resume' : 'Pause';
+    if (!isPaused) {
+        update(); // Resume the game loop
+    }
+}
+
+DOM.pauseButton.addEventListener('click', togglePause);
+
+
+document.addEventListener('keydown', async (event) => {
+    if (gameOver) return; // Game over always stops input
+
+    if (event.code === 'Escape') {
+        togglePause();
+        return;
+    }
+
+    if (isPaused || isProcessingChain || !currentPuyo) return; // Added isPaused check
+    
+    switch (event.code) {
+        case 'ArrowLeft':
+            currentPuyo.move(-1, 0);
+            break;
+        case 'ArrowRight':
+            currentPuyo.move(1, 0);
+            break;
+        case 'ArrowDown':
+            dropCounter = 0;
+            await currentPuyo.move(0, 1);
+            break;
+        case 'Space':
+            currentPuyo.rotate();
+            break;
+    }
+});
+
+// High Score Logic
+const HIGH_SCORES_KEY = 'puyoHighScores';
+
+function loadHighScores() {
+    const scoresJson = localStorage.getItem(HIGH_SCORES_KEY);
+    return scoresJson ? JSON.parse(scoresJson) : [];
+}
+
+function saveHighScores(scores) {
+    localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(scores));
+}
+
+function addHighScore(newScore, date) {
+    const scores = loadHighScores();
+    scores.push({ score: newScore, date: date.toLocaleDateString() });
+    scores.sort((a, b) => b.score - a.score); // Sort descending
+    scores.splice(5); // Keep only top 5
+    saveHighScores(scores);
+}
+
+function displayHighScores() {
+    const scores = loadHighScores();
+    DOM.highScoresList.innerHTML = ''; // Clear previous list
+    if (scores.length === 0) {
+        DOM.highScoresList.innerHTML = '<li>No high scores yet.</li>';
+        return;
+    }
+    scores.forEach((s, index) => {
+        const li = document.createElement('li');
+        li.textContent = `${index + 1}. ${s.score} (${s.date})`;
+        DOM.highScoresList.appendChild(li);
+    });
+}
+
+function init() {
+    // Reset game state for a new game
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    score = 0;
+    DOM.scoreEl.textContent = score;
+    chain = 0;
+    DOM.chainEl.textContent = chain;
+    gameOver = false;
+    isPaused = false;
+    DOM.gameOverContainer.style.display = 'none';
+    DOM.pauseButton.textContent = 'Pause'; // Reset pause button text
+
+    // Reset difficulty variables
+    level = 1;
+    dropInterval = initialDropInterval;
+    timePassedSinceLastLevelUp = 0;
+    lastTime = 0; // Reset lastTime for update loop
+
+    const color1 = COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
+    const color2 = COLOR_KEYS[Math.floor(Math.random() * COLOR_KEYS.length)];
+    nextPuyo = new Puyo(0, 0, color1, color2);
+    spawnPuyo();
+    update();
+    displayHighScores(); // Display high scores on init
+}
+
+init();
+
+</script>
+<div style="position: fixed; bottom: 10px; width: 100%; text-align: center;">
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=https://hokutoengineering.github.io/Experiments/games/puyo.html" alt="visitors">
+</div>
+</body>
+</html>
