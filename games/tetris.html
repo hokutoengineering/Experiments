@@ -246,6 +246,28 @@
             z-index: 10;
         }
 
+        .mobile-button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 50%; /* Make buttons circular */
+            width: 60px;
+            height: 60px;
+            font-size: 1.2em;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        }
+
+        .mobile-button:active {
+            background-color: #c73752; /* Darker red on active */
+            transform: scale(0.95);
+        }
+
         .dpad-container {
             display: flex;
             justify-content: space-around;
@@ -260,8 +282,6 @@
             flex-direction: column;
             gap: 10px;
         }
-
-        /* Remove .controls-left as it's no longer used */
 
         /* Media query for small screens */
         @media (max-width: 768px) {
@@ -295,7 +315,9 @@
                 max-width: none; /* Remove max-width constraint */
             }
             #game-controls {
-                flex-direction: column;
+                flex-direction: row; /* Display as a row */
+                flex-wrap: wrap; /* Allow items to wrap if screen is too narrow */
+                justify-content: center; /* Center items in the row */
                 gap: 10px;
                 padding: 10px;
             }
@@ -332,8 +354,8 @@
             <option value="8">Level 8</option>
             <option value="9">Level 9</option>
         </select>
-        <button id="start-game-button">Start Game</button>
-        <button id="reset-game-button">Reset Game</button>
+        <button id="start-game-button">Start</button>
+        <button id="reset-game-button">Reset</button>
     </div>
 
     <div id="game-container">
