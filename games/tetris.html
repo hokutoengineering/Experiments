@@ -231,6 +231,79 @@
             display: none !important;
         }
 
+        /* Mobile controls styles */
+        #mobile-controls {
+            display: flex; /* Changed from grid */
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: rgba(22, 33, 62, 0.9); /* Semi-transparent background */
+            padding: 10px 0;
+            justify-content: space-around; /* Distribute items */
+            align-items: center;
+            border-top: 2px solid var(--accent-color);
+            z-index: 10;
+        }
+
+        .dpad-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            gap: 10px; /* Adjust gap between buttons as needed */
+            width: 200px; /* Adjust as needed to fit three buttons comfortably */
+        }
+        /* No need for specific grid-area styles for individual buttons when using flex */
+
+        .action-buttons-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Remove .controls-left as it's no longer used */
+
+        /* Media query for small screens */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+                padding-bottom: 120px; /* Make space for fixed mobile controls */
+                /* Adjust padding-top if needed for title or other elements */
+            }
+            #game-container {
+                flex-direction: row; /* Arrange game board and sidebar side-by-side */
+                justify-content: center;
+                align-items: flex-start; /* Align items to the top */
+                gap: 10px; /* Reduced gap */
+                padding: 10px; /* Reduced padding */
+                flex-wrap: nowrap; /* Prevent wrapping */
+            }
+            #game-board {
+                /* Ensure game board takes appropriate space */
+                width: 200px !important;
+                height: 400px !important;
+            }
+            #sidebar {
+                flex-direction: column; /* Stack sidebar items vertically */
+                flex-wrap: nowrap;
+                justify-content: flex-start; /* Align items to the top */
+                width: 120px; /* Fixed width for sidebar */
+                gap: 10px; /* Spacing between sidebar panels */
+            }
+            #next-piece-container, .info-panel {
+                width: 100%; /* Take full width of sidebar */
+                max-width: none; /* Remove max-width constraint */
+            }
+            #game-controls {
+                flex-direction: column;
+                gap: 10px;
+                padding: 10px;
+            }
+            #mobile-controls {
+                display: flex; /* Show mobile controls */
+            }
+        }
+
         /* Optional: Import a retro font from Google Fonts */
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
@@ -465,30 +538,76 @@
             return true;
         }
 
-        function rotatePiece(piece) {
-            const newShape = Array.from({ length: piece.shape.length }, () => Array(piece.shape.length).fill(0));
-            for (let y = 0; y < piece.shape.length; y++) {
-                for (let x = 0; x < piece.shape.length; x++) {
-                    newShape[x][piece.shape.length - 1 - y] = piece.shape[y][x];
+        function rotateCurrentPiece() {
+            if (isGameOver || !gameStarted) return;
+            const originalX = currentPiece.x;
+            const originalShape = JSON.parse(JSON.stringify(currentPiece.shape)); // Deep copy original shape
+
+            const newShape = Array.from({ length: currentPiece.shape.length }, () => Array(currentPiece.shape.length).fill(0));
+            for (let y = 0; y < currentPiece.shape.length; y++) {
+                for (let x = 0; x < currentPiece.shape.length; x++) {
+                    newShape[x][currentPiece.shape.length - 1 - y] = currentPiece.shape[y][x];
                 }
             }
-            const originalShape = piece.shape;
-            piece.shape = newShape;
+            currentPiece.shape = newShape;
 
             // Wall kick (simple version)
-            if (!isValidMove(piece)) {
-                // Try moving one unit right
-                piece.x++;
-                if (isValidMove(piece)) return;
-                // Try moving one unit left
-                piece.x -= 2;
-                if (isValidMove(piece)) return;
-
+            if (!isValidMove(currentPiece)) {
+                currentPiece.x++; // Try moving one unit right
+                if (isValidMove(currentPiece)) {
+                    updateDisplay();
+                    return;
+                }
+                currentPiece.x -= 2; // Try moving one unit left (from original position)
+                if (isValidMove(currentPiece)) {
+                    updateDisplay();
+                    return;
+                }
                 // If still not valid, revert rotation and position
-                piece.x++; // Reset x to original
-                piece.shape = originalShape; // Revert shape
+                currentPiece.x = originalX; // Reset x to original
+                currentPiece.shape = originalShape; // Revert shape
+            }
+            updateDisplay();
+        }
+
+        function movePiece(direction) {
+            if (isGameOver || !gameStarted) return;
+            const offsetX = direction === 'left' ? -1 : 1;
+            if (isValidMove(currentPiece, offsetX, 0)) {
+                currentPiece.x += offsetX;
+                updateDisplay();
             }
         }
+
+        function softDrop() {
+            if (isGameOver || !gameStarted) return;
+            if (isValidMove(currentPiece, 0, 1)) {
+                currentPiece.y++;
+                scoreDisplay.textContent = score; // No score for soft drop, only for hard drop
+                updateDisplay();
+            } else {
+                lockPiece();
+            }
+        }
+
+        function hardDrop() {
+            if (isGameOver || !gameStarted) return;
+            while (isValidMove(currentPiece, 0, 1)) {
+                currentPiece.y++;
+            }
+            lockPiece();
+            score += ROWS - currentPiece.y; // Score for hard drop based on distance
+            scoreDisplay.textContent = score;
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            drawBoard();
+            if (!isGameOver) {
+                 drawPiece(boardCtx, currentPiece);
+            }
+        }
+
 
         function lockPiece() {
             currentPiece.shape.forEach((row, y) => {
@@ -622,46 +741,20 @@
 
             switch (e.key) {
                 case 'ArrowLeft':
-                    if (isValidMove(currentPiece, -1, 0)) {
-                        currentPiece.x--;
-                        drawBoard();
-                        drawPiece(boardCtx, currentPiece);
-                    }
+                    movePiece('left');
                     break;
                 case 'ArrowRight':
-                    if (isValidMove(currentPiece, 1, 0)) {
-                        currentPiece.x++;
-                        drawBoard();
-                        drawPiece(boardCtx, currentPiece);
-                    }
+                    movePiece('right');
                     break;
                 case 'ArrowUp': // Remove ArrowUp for rotation
                 case ' ': // Rotate
-                    const originalX = currentPiece.x;
-                    rotatePiece(currentPiece);
-                    if (!isValidMove(currentPiece)) {
-                         // If rotation makes it invalid, try to kick it
-                         // Simple kick logic: try moving 1 unit left, then 1 unit right
-                        currentPiece.x--;
-                        if (!isValidMove(currentPiece)) {
-                            currentPiece.x += 2;
-                            if (!isValidMove(currentPiece)) {
-                                currentPiece.x = originalX; // Revert if both kicks fail
-                                rotatePiece(currentPiece); // Revert rotation
-                            }
-                        }
-                    }
-                    drawBoard();
-                    drawPiece(boardCtx, currentPiece);
+                    rotateCurrentPiece();
                     break;
                 case 'ArrowDown': // Soft drop
-                    if (isValidMove(currentPiece, 0, 1)) {
-                        currentPiece.y++;
-
-                        scoreDisplay.textContent = score;
-                        drawBoard();
-                        drawPiece(boardCtx, currentPiece);
-                    }
+                    softDrop();
+                    break;
+                case 'Shift': // Hard drop with Shift
+                    hardDrop();
                     break;
             }
         });
@@ -681,18 +774,7 @@
             gameStarted = false; // Allow startGame to execute
             startGame(); // Start a fresh game
         }
-
-        // Initialize game on load, but don't start the loop until button is pressed
-        window.onload = () => {
-            levelDisplay.textContent = parseInt(levelSelect.value) + 1;
-            // Draw an empty board and next piece preview initially
-            board = createEmptyBoard();
-            nextPiece = getRandomPiece();
-            drawNextPiece();
-            drawBoard();
-            displayHighScores(); // Display high scores on load
-        };
-
+        
         // --- High Score Logic ---
         const HIGH_SCORES_KEY = 'tetrisHighScores';
 
@@ -734,7 +816,53 @@
             });
             console.log("displayHighScores: High scores updated in HTML.");
         }
+
+        // Initialize game on load, but don't start the loop until button is pressed
+        window.onload = () => {
+            levelDisplay.textContent = parseInt(levelSelect.value) + 1;
+            // Draw an empty board and next piece preview initially
+            board = createEmptyBoard();
+            nextPiece = getRandomPiece();
+            drawNextPiece();
+            drawBoard();
+            displayHighScores(); // Display high scores on load
+
+            // --- Mobile Controls Event Listeners ---
+            document.getElementById('btn-left').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (gameStarted) movePiece('left');
+            });
+            document.getElementById('btn-right').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (gameStarted) movePiece('right');
+            });
+            document.getElementById('btn-rotate').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (gameStarted) rotateCurrentPiece();
+            });
+            document.getElementById('btn-down').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (gameStarted) softDrop();
+            });
+            document.getElementById('btn-hard-drop').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (gameStarted) hardDrop();
+            });
+        };
     </script>
+
+    <div id="mobile-controls">
+        <div class="dpad-container">
+            <button class="mobile-button" id="btn-left">◀</button>
+            <button class="mobile-button" id="btn-down">▼</button>
+            <button class="mobile-button" id="btn-right">▶</button>
+        </div>
+        <div class="action-buttons-container">
+            <button class="mobile-button" id="btn-rotate">🔄</button>
+            <button class="mobile-button" id="btn-hard-drop">⬇️</button>
+        </div>
+    </div>
+    
     <br/><br/>
     <br/>
     <img src="https://visitor-badge.laobi.icu/badge?page_id=https://hokutoengineering.github.io/Experiments/games/tetris.html" alt="visitors">
