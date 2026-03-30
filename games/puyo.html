@@ -2,96 +2,198 @@
 <html>
 <head>
 <title>Puyo Puyo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
 <style>
+  * {
+    box-sizing: border-box;
+    touch-action: none;
+  }
+
   body {
     font-family: 'Poppins', sans-serif;
     background: #141E30;
     background-image: linear-gradient(to top, #243B55 0%, #141E30 100%);
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
     margin: 0;
     color: #E0E0E0;
+    overflow-x: hidden;
   }
+
+  /* Base styles for game container */
   #game-container {
     display: flex;
     align-items: flex-start;
-    gap: 30px;
+    gap: 20px;
     padding: 20px;
     background-color: rgba(0, 0, 0, 0.2);
     border-radius: 15px;
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     border: 1px solid rgba(255, 255, 255, 0.18);
+    max-width: 100%;
   }
-  canvas {
-    border-radius: 8px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-  }
+
   #gameCanvas {
     background-color: #2c3e50;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    display: block;
   }
+
+  #nextCanvas {
+    background-color: #34495e;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    display: block;
+  }
+
   #game-info {
+    width: 100%;
+    max-width: 200px;
     font-size: 1em;
-    text-align: center;
-    background-color: rgba(0, 0, 0, 0.1); /* Slightly darker for distinction */
+    text-align: left;
+    background-color: rgba(0, 0, 0, 0.1);
     padding: 15px;
     border-radius: 10px;
+    flex-shrink: 0;
   }
+
   #game-info h2, #game-info h3, #game-info #highScoresContainer {
-    margin: 15px 0 10px 0; /* Add top margin for spacing */
+    margin: 10px 0 8px 0;
     font-weight: 600;
   }
-  #game-info h3 {
-    margin-top: 20px;
+
+  #game-info h2 {
+    font-size: 1.3em;
   }
+
+  #game-info h3 {
+    margin-top: 15px;
+    font-size: 1.1em;
+  }
+
   #game-info span {
     font-weight: 400;
   }
-  #nextPuyoControl { /* New style for the wrapper */
+
+  #nextPuyoControl {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 15px; /* Spacing between next puyo canvas and pause button */
-    margin-top: 20px; /* Space between "Chain" and "Next" section */
+    gap: 12px;
+    margin-top: 15px;
   }
-  #pauseButton { /* Moved from inline style */
-      /* Removed margin-top: 20px; handled by parent gap */
-      padding: 10px 20px;
-      font-size: 1em;
-      background-color: #28a745;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      outline: none;
-      transition: background-color 0.2s ease;
+
+  #pauseButton {
+    padding: 10px 20px;
+    font-size: 1em;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    outline: none;
+    transition: background-color 0.2s ease;
   }
+
   #pauseButton:hover {
-      background-color: #218838; /* Darken on hover */
+    background-color: #218838;
   }
-  #nextCanvas {
-    background-color: #34495e;
-  }
-  #game-over-container {
-    position: absolute;
-    top: 0;
+
+  /* Overlay controls - fixed position like tetris.html */
+  #touch-controls {
+    display: none;
+    position: fixed;
+    bottom: 0;
     left: 0;
     width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.5);
-    display: none;
+    background-color: rgba(20, 30, 48, 0.95);
+    padding: 15px 0;
+    justify-content: space-around;
+    align-items: center;
+    border-top: 2px solid #28a745;
+    z-index: 10;
+  }
+
+  .touch-btn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+    flex-grow: 0;
+  }
+
+  .touch-btn:active {
+    background-color: #218838;
+    transform: scale(0.95);
+  }
+
+  .dpad-container {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .rotate-btn {
+    background-color: #f1c40f;
+    color: #141E30;
+    font-weight: 600;
+    font-size: 24px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
     justify-content: center;
     align-items: center;
   }
-  #game-over {
-    font-size: 4em;
-    color: white;
-    font-weight: 600;
-    text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+
+  /* Mobile-specific styles */
+  @media (max-width: 768px) {
+    #touch-controls {
+      display: flex;
+    }
+
+    body {
+      padding-bottom: 100px;
+    }
+
+    #game-container {
+      gap: 15px;
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    #gameCanvas {
+      width: 240px;
+      height: auto;
+    }
+
+    #game-info {
+      max-width: 160px;
+      font-size: 0.9em;
+      padding: 12px;
+    }
   }
 </style>
 </head>
@@ -115,6 +217,16 @@
 </div>
 <div id="game-over-container">
     <div id="game-over">Game Over</div>
+</div>
+
+<!-- Touch controls for mobile - overlay fixed at bottom -->
+<div id="touch-controls">
+    <div class="dpad-container">
+        <button class="touch-btn" id="btn-left">&larr;</button>
+        <button class="touch-btn" id="btn-down">&darr;</button>
+        <button class="touch-btn" id="btn-right">&rarr;</button>
+        <button class="touch-btn rotate-btn" id="btn-rotate">↻</button>
+    </div>
 </div>
 
 <script>
@@ -461,6 +573,37 @@ function togglePause() {
 
 DOM.pauseButton.addEventListener('click', togglePause);
 
+// Touch controls for mobile - overlay fixed at bottom
+const touchControls = {
+    left: document.getElementById('btn-left'),
+    right: document.getElementById('btn-right'),
+    down: document.getElementById('btn-down'),
+    rotate: document.getElementById('btn-rotate')
+};
+
+function addTouchListener(elem, action) {
+    elem.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!isPaused && !gameOver && currentPuyo) {
+            action();
+        }
+    }, { passive: false });
+    // Also support mouse for testing on desktop
+    elem.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (!isPaused && !gameOver && currentPuyo) {
+            action();
+        }
+    });
+}
+
+addTouchListener(touchControls.left, () => currentPuyo.move(-1, 0));
+addTouchListener(touchControls.right, () => currentPuyo.move(1, 0));
+addTouchListener(touchControls.down, async () => {
+    dropCounter = 0;
+    await currentPuyo.move(0, 1);
+});
+addTouchListener(touchControls.rotate, () => currentPuyo.rotate());
 
 document.addEventListener('keydown', async (event) => {
     if (gameOver) return; // Game over always stops input
