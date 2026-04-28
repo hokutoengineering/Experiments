@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マルチ漢字ビンゴメーカー（修正版）</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; padding: 20px; color: #333; line-height: 1.6; }
+        .setup-panel { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto; }
+        h1 { font-size: 1.4rem; margin-top: 0; color: #007bff; }
+        .input-group { margin: 15px 0; text-align: left; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; }
+        input[type="text"] { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1.1rem; box-sizing: border-box; }
+        .grid-inputs { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        input[type="number"] { width: 60px; padding: 8px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem; }
+        button { background: #28a745; color: white; border: none; padding: 15px 40px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; font-weight: bold; width: 100%; transition: 0.2s; margin-top: 10px; }
+        button:hover { background: #218838; }
+        
+        #bingoContainer { 
+            display: grid; 
+            gap: 20px; 
+            justify-content: center; 
+            margin-top: 20px;
+        }
+
+        .bingo-card { 
+            background: white; 
+            padding: 15px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+            border: 1px solid #ddd;
+            width: 280px; /* サイズを固定して安定させます */
+        }
+        .card-header { font-size: 0.8rem; margin-bottom: 8px; color: #999; text-align: left; }
+
+        .bingo-grid { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 5px; 
+        }
+        .cell { 
+            aspect-ratio: 1 / 1; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            background: #fff; 
+            border: 2px solid #333; 
+            border-radius: 4px; 
+            font-size: 2rem; 
+            font-weight: bold; 
+            cursor: pointer; 
+            user-select: none;
+        }
+        .cell.marked { background-color: #fff9c4; position: relative; }
+        .cell.marked::after { 
+            content: "○"; 
+            color: rgba(255, 0, 0, 0.4); 
+            position: absolute; 
+            font-size: 3rem; 
+        }
+
+        @media print {
+            .setup-panel, .hint { display: none; }
+            body { background: white; padding: 0; }
+            #bingoContainer { gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="setup-panel">
+    <h1>漢字ビンゴメーカー</h1>
+    
+    <div class="input-group">
+        <label for="kanjiInput">使う漢字（9文字入力してください）</label>
+        <input type="text" id="kanjiInput" value="一二三四五六七八九" autocomplete="off">
+    </div>
+
+    <div class="input-group">
+        <label>カードの枚数（配置）</label>
+        <div class="grid-inputs">
+            <input type="number" id="rows" value="1" min="1"> 行 × 
+            <input type="number" id="cols" value="1" min="1"> 列
+            <span>（合計 <span id="totalCount">1</span> 枚）</span>
+        </div>
+    </div>
+
+    <button id="generateBtn">ビンゴカードを生成！</button>
+</div>
+
+<div id="bingoContainer"></div>
+
+<p class="hint" style="text-align: center; color: #888; margin-top: 20px;">
+    マスをクリックすると丸がつきます。印刷して使うこともできます。
+</p>
+
+<script>
+    const generateBtn = document.getElementById('generateBtn');
+    const kanjiInput = document.getElementById('kanjiInput');
+    const rowsInput = document.getElementById('rows');
+    const colsInput = document.getElementById('cols');
+    const totalCountLabel = document.getElementById('totalCount');
+    const container = document.getElementById('bingoContainer');
+
+    // 枚数表示の更新
+    function updateTotal() {
+        const r = parseInt(rowsInput.value) || 1;
+        const c = parseInt(colsInput.value) || 1;
+        totalCountLabel.textContent = r * c;
+    }
+    rowsInput.oninput = updateTotal;
+    colsInput.oninput = updateTotal;
+
+    // 生成メイン関数
+    function generate() {
+        const text = kanjiInput.value.replace(/\s+/g, ''); // 空白を削除
+        const kanjiList = Array.from(text);
+        const rows = parseInt(rowsInput.value) || 1;
+        const cols = parseInt(colsInput.value) || 1;
+
+        if (kanjiList.length < 9) {
+            alert('漢字が足りません！9文字以上入力してください。');
+            return;
+        }
+
+        container.innerHTML = '';
+        container.style.gridTemplateColumns = `repeat(${cols}, auto)`;
+
+        const numCards = rows * cols;
+
+        for (let i = 0; i < numCards; i++) {
+            // 文字をシャッフル（コピーしてから実行）
+            let shuffled = [...kanjiList].sort(() => Math.random() - 0.5).slice(0, 9);
+
+            const card = document.createElement('div');
+            card.className = 'bingo-card';
+
+            const header = document.createElement('div');
+            header.className = 'card-header';
+            header.textContent = `No. ${i + 1}`;
+            card.appendChild(header);
+
+            const grid = document.createElement('div');
+            grid.className = 'bingo-grid';
+
+            shuffled.forEach(char => {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.textContent = char;
+                cell.onclick = function() {
+                    this.classList.toggle('marked');
+                };
+                grid.appendChild(cell);
+            });
+
+            card.appendChild(grid);
+            container.appendChild(card);
+        }
+    }
+
+    // ボタンにイベントを登録
+    generateBtn.addEventListener('click', generate);
+
+    // 初回実行
+    window.onload = generate;
+</script>
+
+</body>
+</html>
