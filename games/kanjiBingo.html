@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マルチ漢字ビンゴメーカー（修正版）</title>
+    <title>マルチ漢字ビンゴメーカー（自由入力版）</title>
     <style>
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; padding: 20px; color: #333; line-height: 1.6; }
         .setup-panel { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto; }
         h1 { font-size: 1.4rem; margin-top: 0; color: #007bff; }
         .input-group { margin: 15px 0; text-align: left; }
         label { font-weight: bold; display: block; margin-bottom: 5px; }
-        input[type="text"] { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1.1rem; box-sizing: border-box; }
+        textarea { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1.1rem; box-sizing: border-box; resize: vertical; min-height: 80px; }
         .grid-inputs { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
         input[type="number"] { width: 60px; padding: 8px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem; }
         button { background: #28a745; color: white; border: none; padding: 15px 40px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; font-weight: bold; width: 100%; transition: 0.2s; margin-top: 10px; }
@@ -29,7 +29,8 @@
             border-radius: 10px; 
             box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
             border: 1px solid #ddd;
-            width: 280px; /* サイズを固定して安定させます */
+            width: 280px;
+            page-break-inside: avoid;
         }
         .card-header { font-size: 0.8rem; margin-bottom: 8px; color: #999; text-align: left; }
 
@@ -72,8 +73,8 @@
     <h1>漢字ビンゴメーカー</h1>
     
     <div class="input-group">
-        <label for="kanjiInput">使う漢字（9文字入力してください）</label>
-        <input type="text" id="kanjiInput" value="一二三四五六七八九" autocomplete="off">
+        <label for="kanjiInput">使う漢字（9文字以上入力してください）</label>
+        <textarea id="kanjiInput" placeholder="例：春夏秋冬花鳥風月月火水木金土日">一二三四五六七八九十</textarea>
     </div>
 
     <div class="input-group">
@@ -102,7 +103,6 @@
     const totalCountLabel = document.getElementById('totalCount');
     const container = document.getElementById('bingoContainer');
 
-    // 枚数表示の更新
     function updateTotal() {
         const r = parseInt(rowsInput.value) || 1;
         const c = parseInt(colsInput.value) || 1;
@@ -111,15 +111,15 @@
     rowsInput.oninput = updateTotal;
     colsInput.oninput = updateTotal;
 
-    // 生成メイン関数
     function generate() {
-        const text = kanjiInput.value.replace(/\s+/g, ''); // 空白を削除
+        // 空白、改行、タブをすべて削除して文字の配列を作る
+        const text = kanjiInput.value.replace(/\s+/g, ''); 
         const kanjiList = Array.from(text);
         const rows = parseInt(rowsInput.value) || 1;
         const cols = parseInt(colsInput.value) || 1;
 
         if (kanjiList.length < 9) {
-            alert('漢字が足りません！9文字以上入力してください。');
+            alert('漢字が足りません！9文字以上入力してください（現在は ' + kanjiList.length + ' 文字です）。');
             return;
         }
 
@@ -129,8 +129,11 @@
         const numCards = rows * cols;
 
         for (let i = 0; i < numCards; i++) {
-            // 文字をシャッフル（コピーしてから実行）
-            let shuffled = [...kanjiList].sort(() => Math.random() - 0.5).slice(0, 9);
+            // フィッシャー–イェーツのシャッフル（簡易版）
+            // 全体のリストからランダムに並び替えて、先頭の9つだけを使う
+            let shuffled = [...kanjiList]
+                .sort(() => Math.random() - 0.5)
+                .slice(0, 9);
 
             const card = document.createElement('div');
             card.className = 'bingo-card';
@@ -158,10 +161,7 @@
         }
     }
 
-    // ボタンにイベントを登録
     generateBtn.addEventListener('click', generate);
-
-    // 初回実行
     window.onload = generate;
 </script>
 
