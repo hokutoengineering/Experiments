@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Retro Wireframe FPS - Subdivided Cyber Grid</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: monospace;
+            user-select: none;
+        }
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #0f0;
+            text-align: center;
+            font-size: 24px;
+            cursor: pointer;
+            border: 2px solid #0f0;
+            padding: 20px;
+            background: rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #0f0;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 0 0 5px #0f0;
+            z-index: 5;
+            pointer-events: none;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: #f00;
+        }
+        #crosshair::before { top: 11px; left: 0; width: 24px; height: 2px; }
+        #crosshair::after { top: 0; left: 11px; width: 2px; height: 24px; }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
+</head>
+<body>
+
+    <div id="ui-layer">SCORE: <span id="scoreVal">000000</span></div>
+    <div id="instructions">CLICK TO PLAY<br><span style="font-size:16px">WASD to Move | Mouse to Look | SPACEBAR to Shoot</span></div>
+    <div id="crosshair"></div>
+
+<script>
+// --- GAME STATE ---
+let score = 0;
+const scoreValElement = document.getElementById('scoreVal');
+
+function addScore(amount) {
+    score += amount;
+    scoreValElement.innerText = String(score).padStart(6, '0');
+}
+
+// --- SETUP SCENE, CAMERA, & RENDERER ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- CONTROLS ---
+const controls = new THREE.PointerLockControls(camera, document.body);
+const instructions = document.getElementById('instructions');
+
+instructions.addEventListener('click', () => { controls.lock(); });
+controls.addEventListener('lock', () => { instructions.style.display = 'none'; });
+controls.addEventListener('unlock', () => { instructions.style.display = 'block'; });
+
+// --- SMART THICK WIREFRAME GENERATOR ---
+// Added a "isGridWall" toggle flag so we don't accidentally wipe out non-grid shapes
+function createThickWireframeMesh(geometry, hexColor, lineWidth = 4, fillOpacity = 1.0, isGridWall = false) {
+    let lineSegmentsGeo = new THREE.LineSegmentsGeometry();
+
+    if (isGridWall) {
+        // Use WireframeGeometry + Straight line parsing ONLY for the subdivided walls
+        const wireGeo = new THREE.WireframeGeometry(geometry);
+        const posAttr = wireGeo.attributes.position;
+        const cleanSegments = [];
+        const p1 = new THREE.Vector3();
+        const p2 = new THREE.Vector3();
+
+        for (let i = 0; i < posAttr.count; i += 2) {
+            p1.fromBufferAttribute(posAttr, i);
+            p2.fromBufferAttribute(posAttr, i + 1);
+
+            let changes = 0;
+            if (Math.abs(p1.x - p2.x) > 0.001) changes++;
+            if (Math.abs(p1.y - p2.y) > 0.001) changes++;
+            if (Math.abs(p1.z - p2.z) > 0.001) changes++;
+
+            if (changes === 1) { 
+                cleanSegments.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+            }
+        }
+        lineSegmentsGeo.setPositions(cleanSegments);
+    } else {
+        // For targets and bullets, use standard EdgesGeometry so they show up beautifully completely intact
+        const edgesGeo = new THREE.EdgesGeometry(geometry);
+        lineSegmentsGeo.fromEdgesGeometry(edgesGeo);
+    }
+    
+    const lineMat = new THREE.LineMaterial({
+        color: hexColor,
+        linewidth: lineWidth, 
+        resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    });
+    
+    const thickLines = new THREE.LineSegments2(lineSegmentsGeo, lineMat);
+    
+    const faceMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: fillOpacity, depthWrite: true });
+    const faceMesh = new THREE.Mesh(geometry, faceMat);
+    
+    faceMesh.add(thickLines);
+    return { mesh: faceMesh, lineMaterial: lineMat };
+}
+
+const materialsToUpdate = [];
+
+// --- MAP CONFIGURATION ---
+const MAP = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,1,0,0,0,1],
+    [1,0,1,1,0,1,0,1,0,1],
+    [1,0,1,0,0,0,0,1,0,1],
+    [1,0,1,0,1,1,0,1,0,1],
+    [1,0,0,0,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+];
+
+const wallSize = 4;
+const wallGeo = new THREE.BoxGeometry(wallSize, wallSize, wallSize, 2, 2, 2);
+
+for(let z = 0; z < MAP.length; z++) {
+    for(let x = 0; x < MAP[z].length; x++) {
+        if(MAP[z][x] === 1) {
+            // PASSING "true" AS THE LAST ARGUMENT FOR WALLS
+            const wall = createThickWireframeMesh(wallGeo, 0x00ff00, 4, 1.0, true); 
+            wall.mesh.position.set(x * wallSize, wallSize / 2, z * wallSize);
+            scene.add(wall.mesh);
+            materialsToUpdate.push(wall.lineMaterial);
+        }
+    }
+}
+
+// Floor Grid Helper
+const gridHelper = new THREE.GridHelper(200, 50, 0x004400, 0x002200);
+gridHelper.position.y = 0;
+scene.add(gridHelper);
+
+// --- MOVING TARGETS ---
+const targets = [];
+const targetGeo = new THREE.OctahedronGeometry(0.8, 0); 
+const TARGET_COLLISION_RADIUS = 0.9; 
+
+function randomizeTargetPosition(targetMesh) {
+    let validSpace = false;
+    let gridX, gridZ;
+    
+    while(!validSpace) {
+        gridX = Math.floor(Math.random() * MAP[0].length);
+        gridZ = Math.floor(Math.random() * MAP.length);
+        if(MAP[gridZ][gridX] === 0) {
+            validSpace = true;
+        }
+    }
+    
+    const worldX = gridX * wallSize;
+    const worldZ = gridZ * wallSize;
+    
+    targetMesh.position.set(worldX, 2, worldZ);
+    targetMesh.userData.baseX = worldX;
+    targetMesh.userData.baseZ = worldZ;
+    targetMesh.userData.angle = Math.random() * Math.PI * 2;
+}
+
+for (let i = 0; i < 4; i++) {
+    // PASSING "false" FOR TARGETS SO THEY KEEP THEIR LINES
+    const target = createThickWireframeMesh(targetGeo, 0x00ffff, 4, 0.0, false); 
+    
+    target.mesh.userData = {
+        angle: 0,
+        speed: 0.003 + Math.random() * 0.005, 
+        radius: 0.5 + Math.random() * 0.5, 
+        baseX: 0,
+        baseZ: 0
+    };
+    
+    randomizeTargetPosition(target.mesh);
+    scene.add(target.mesh);
+    targets.push(target.mesh);
+    materialsToUpdate.push(target.lineMaterial);
+}
+
+// --- PROJECTILES ---
+const projectiles = [];
+const projectileGeo = new THREE.SphereGeometry(0.2, 5, 5); 
+const projectileSpeed = 45.0; 
+const BULLET_COLLISION_RADIUS = 0.2;
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === " " && controls.isLocked) {
+        e.preventDefault(); 
+
+        // PASSING "false" FOR BULLETS
+        const bullet = createThickWireframeMesh(projectileGeo, 0xffff00, 5, 0.0, false);
+        bullet.mesh.position.copy(camera.position);
+        bullet.mesh.position.y -= 0.3; 
+
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+
+        bullet.mesh.userData = {
+            velocity: direction.multiplyScalar(projectileSpeed),
+            aliveTime: 0 
+        };
+
+        scene.add(bullet.mesh);
+        projectiles.push(bullet.mesh);
+        materialsToUpdate.push(bullet.lineMaterial);
+    }
+});
+
+// --- PLAYER STARTING POSITION ---
+camera.position.set(4, 2, 4);
+
+// --- KEYBOARD INPUT ---
+const keys = { w: false, a: false, s: false, d: false };
+document.addEventListener('keydown', (e) => { if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = true; });
+document.addEventListener('keyup', (e) => { if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = false; });
+
+// --- WALL COLLISION HELPER ---
+function checkWallCollision(x, z) {
+    const playerRadius = 0.8; 
+    
+    const checkPositions = [
+        { x: x - playerRadius, z: z - playerRadius },
+        { x: x + playerRadius, z: z - playerRadius },
+        { x: x - playerRadius, z: z + playerRadius },
+        { x: x + playerRadius, z: z + playerRadius }
+    ];
+
+    for (let p of checkPositions) {
+        const gridX = Math.floor((p.x + wallSize / 2) / wallSize);
+        const gridZ = Math.floor((p.z + wallSize / 2) / wallSize);
+
+        if (gridZ < 0 || gridZ >= MAP.length || gridX < 0 || gridX >= MAP[0].length) {
+            return true; 
+        }
+        if (MAP[gridZ][gridX] === 1) {
+            return true; 
+        }
+    }
+    return false;
+}
+
+// --- MAIN GAME LOOP ---
+const clock = new THREE.Clock();
+const moveSpeed = 12.0;
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const delta = clock.getDelta();
+
+    if (controls.isLocked) {
+        const changeX = (Number(keys.d) - Number(keys.a)) * moveSpeed * delta;
+        const changeZ = (Number(keys.s) - Number(keys.w)) * moveSpeed * delta;
+
+        const oldX = camera.position.x;
+        const oldZ = camera.position.z;
+
+        controls.moveRight(changeX);
+        controls.moveForward(changeZ);
+
+        const newX = camera.position.x;
+        const newZ = camera.position.z;
+
+        if (checkWallCollision(newX, oldZ)) {
+            camera.position.x = oldX; 
+        }
+        if (checkWallCollision(camera.position.x, newZ)) {
+            camera.position.z = oldZ; 
+        }
+
+        camera.position.y = 2; 
+    }
+
+    // Animate Targets
+    targets.forEach(t => {
+        t.rotation.y += 0.004;
+        t.rotation.x += 0.002;
+        
+        t.userData.angle += t.userData.speed;
+        t.position.x = t.userData.baseX + Math.cos(t.userData.angle) * t.userData.radius;
+        t.position.z = t.userData.baseZ + Math.sin(t.userData.angle) * t.userData.radius;
+        t.position.y = 2 + Math.sin(t.userData.angle * 2) * 0.2; 
+    });
+
+    // Update and Check Projectiles
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const bullet = projectiles[i];
+        bullet.position.addScaledVector(bullet.userData.velocity, delta);
+        
+        bullet.rotation.x += 0.05;
+        bullet.rotation.y += 0.05;
+
+        let hitRegistered = false;
+        
+        for (let j = 0; j < targets.length; j++) {
+            const target = targets[j];
+            const distance = bullet.position.distanceTo(target.position);
+            
+            if (distance < (TARGET_COLLISION_RADIUS + BULLET_COLLISION_RADIUS)) {
+                addScore(100);
+                randomizeTargetPosition(target);
+                
+                scene.remove(bullet);
+                projectiles.splice(i, 1);
+                hitRegistered = true;
+                break; 
+            }
+        }
+
+        if (hitRegistered) continue;
+
+        // Bullet-to-wall collision
+        const bGridX = Math.floor((bullet.position.x + wallSize / 2) / wallSize);
+        const bGridZ = Math.floor((bullet.position.z + wallSize / 2) / wallSize);
+        if (MAP[bGridZ] && MAP[bGridZ][bGridX] === 1) {
+            scene.remove(bullet);
+            projectiles.splice(i, 1);
+            continue;
+        }
+
+        bullet.userData.aliveTime += delta;
+        if (bullet.userData.aliveTime > 3.0) {
+            scene.remove(bullet);
+            projectiles.splice(i, 1);
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+
+    materialsToUpdate.forEach(mat => {
+        if(mat) mat.resolution.set(width, height);
+    });
+});
+
+animate();
+</script>
+</body>
+</html>
