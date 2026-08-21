@@ -748,6 +748,11 @@ function advanceStage() {
   currentStage++;
   enemiesKilledInStage = 0;
 
+  // Clear out all remaining enemies from the previous stage
+  enemies.forEach(e => scene.remove(e));
+  enemies.length = 0;
+  spawnTimer = 0;
+
   // Rebuild environment
   scene.background = new THREE.Color(STAGES[currentStage].sky);
   scene.fog = new THREE.Fog(STAGES[currentStage].sky, STAGES[currentStage].fogNear, STAGES[currentStage].fogFar);
