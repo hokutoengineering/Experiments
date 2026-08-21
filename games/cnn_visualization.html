@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive CNN Training Visualization</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        background: #0f0f1a;
+        color: #e0e0f0;
+        display: flex;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 20px;
+    }
+    .container { max-width: 1300px; width: 100%; }
+    h1 {
+        text-align: center;
+        font-weight: 300;
+        font-size: 28px;
+        margin-bottom: 6px;
+        letter-spacing: 1px;
+        background: linear-gradient(135deg, #34d399, #60a5fa, #a78bfa);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+        text-align: center;
+        color: #8899bb;
+        font-size: 14px;
+        margin-bottom: 20px;
+    }
+    .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card {
+        background: #1a1a2e;
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid #2a2a4a;
+    }
+    .card h3 {
+        font-size: 14px;
+        font-weight: 500;
+        color: #99aacd;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    canvas {
+        display: block;
+        width: 100%;
+        border-radius: 8px;
+        background: #12121e;
+    }
+    #inputCanvas { aspect-ratio: 1 / 1; max-width: 280px; margin: 0 auto; }
+    #featureMapCanvas { aspect-ratio: 2 / 1; width: 100%; height: auto; }
+    #filterCanvas { aspect-ratio: 4 / 1; }
+    #filterCanvas2 { aspect-ratio: 6.4 / 1; }
+    #lossCanvas { width: 100%; height: 180px; }
+    .controls {
+        background: #1a1a2e;
+        border-radius: 12px;
+        padding: 16px 20px;
+        border: 1px solid #2a2a4a;
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 20px;
+    }
+    .controls label {
+        font-size: 13px;
+        color: #99aacd;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .controls input[type="range"] {
+        width: 120px;
+        accent-color: #60a5fa;
+        background: #2a2a4a;
+        height: 4px;
+        border-radius: 2px;
+    }
+    .controls input[type="checkbox"] { accent-color: #60a5fa; }
+    .controls button {
+        background: linear-gradient(135deg, #34d399, #60a5fa);
+        border: none;
+        color: white;
+        padding: 7px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .controls button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 15px rgba(96,165,250,0.3);
+    }
+    .controls button:active { transform: translateY(0); }
+    .controls button.secondary {
+        background: #2a2a4a;
+        color: #c0c0e0;
+    }
+    .controls button.secondary:hover { background: #3a3a5a; box-shadow: none; }
+    .info-panel {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-size: 13px;
+        color: #8899bb;
+    }
+    .info-panel .stat {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .info-panel .stat span {
+        color: #e0e0f0;
+        font-weight: 500;
+        min-width: 30px;
+    }
+    .bottom-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 16px;
+        margin-top: 16px;
+    }
+    .bottom-row-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 16px;
+    }
+    .log-card {
+        background: #1a1a2e;
+        border-radius: 12px;
+        padding: 12px 16px;
+        border: 1px solid #2a2a4a;
+        max-height: 180px;
+        overflow-y: auto;
+    }
+    .log-card h3 {
+        font-size: 13px;
+        font-weight: 500;
+        color: #99aacd;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .log-card .log-entry {
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 11px;
+        color: #66bbaa;
+        line-height: 1.5;
+        opacity: 0.85;
+    }
+    .log-card .log-entry .dim { color: #556688; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #1a1a2e; }
+    ::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 2px; }
+    .geom-label { color: #fbbf24; font-weight: 500; font-size: 12px; }
+    .filter-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+        justify-content: center;
+    }
+    .filter-thumb {
+        width: 44px;
+        height: 44px;
+        border-radius: 4px;
+        border: 1px solid #2a2a4a;
+        background: #0f0f1a;
+        image-rendering: pixelated;
+    }
+    .feature-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        justify-content: center;
+        align-items: flex-start;
+    }
+    .feature-cell {
+        text-align: center;
+        font-size: 9px;
+        color: #667799;
+    }
+    .feature-cell canvas {
+        width: 80px;
+        height: 80px;
+        border-radius: 4px;
+        border: 1px solid #2a2a4a;
+        image-rendering: pixelated;
+    }
+    @media (max-width: 1000px) {
+        .main-grid { grid-template-columns: 1fr; }
+        .bottom-row, .bottom-row-2 { grid-template-columns: 1fr; }
+    }
+    .mini-canvas { border-radius: 4px; border: 1px solid #2a2a4a; background: #0f0f1a; image-rendering: pixelated; }
+    .tab-bar {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+    }
+    .tab-bar button {
+        background: #2a2a4a;
+        border: none;
+        color: #8899bb;
+        padding: 4px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        transition: all 0.15s;
+    }
+    .tab-bar button.active {
+        background: linear-gradient(135deg, #34d39955, #60a5fa55);
+        color: #e0e0f0;
+        border: 1px solid #60a5fa44;
+    }
+    .tab-bar button:hover { background: #3a3a5a; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🔬 CNN Training Visualizer</h1>
+    <p class="subtitle" id="subtitle">Convolutional Neural Network &middot; 8×8 Input → Conv → Pool → Conv → Pool → FC → 10-Class Digit Classification</p>
+
+    <div class="main-grid">
+        <div class="card">
+            <h3>📷 Input &amp; Ground Truth</h3>
+            <canvas id="inputCanvas" width="400" height="400"></canvas>
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:#667799;">
+                <span style="display:flex;gap:10px;align-items:center;">
+                    <span>Input Digit (8×8)</span>
+                    <span class="geom-label" id="predLabel">predicted=<span>—</span></span>
+                </span>
+                <span class="geom-label" id="patternLabel">Classes: <span>0–9</span></span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>🧩 Feature Maps</h3>
+            <div class="tab-bar">
+                <button class="active" data-tab="conv1">Conv1 (4 fmaps)</button>
+                <button data-tab="pool1">Pool1 (4 fmaps)</button>
+                <button data-tab="conv2">Conv2 (8 fmaps)</button>
+                <button data-tab="pool2">Pool2 (8 fmaps)</button>
+            </div>
+            <div id="featureMapContainer">
+                <canvas id="featureMapCanvas" width="600" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-row-2">
+        <div class="card">
+            <h3>🎛️ Learned Filters — Conv1 (4 × 3×3)</h3>
+            <canvas id="filterCanvas" width="320" height="80"></canvas>
+        </div>
+        <div class="card">
+            <h3>🎛️ Learned Filters — Conv2 (8 × 3×3 × 4ch)</h3>
+            <canvas id="filterCanvas2" width="640" height="100"></canvas>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="playBtn">▶ Play</button>
+        <button id="stepBtn" class="secondary">⏭ Step</button>
+        <button id="resetBtn" class="secondary">↺ Reset</button>
+        <label>Speed <input type="range" id="speedRange" min="1" max="20" value="5"></label>
+        <label>LR <input type="range" id="lrRange" min="0.001" max="0.5" step="0.001" value="0.05"></label>
+        <div class="info-panel">
+            <span class="stat">Epoch <span id="epochDisplay">0</span></span>
+            <span class="stat">Loss <span id="lossDisplay">—</span></span>
+            <span class="stat">Acc <span id="accDisplay">—</span></span>
+        </div>
+    </div>
+
+    <div class="bottom-row">
+        <div class="card" style="grid-column: 1;">
+            <h3>📉 Loss Curve</h3>
+            <canvas id="lossCanvas" width="400" height="160"></canvas>
+        </div>
+        <div class="card" style="grid-column: 2;">
+            <h3>⚙️ Data Options</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <label>Digit classes <span id="numClassesValue">10</span> <input type="range" id="numClassesRange" min="2" max="10" value="10" style="width:80px"></label>
+                <label>Noise <input type="range" id="noiseRange" min="0" max="40" value="10" style="width:80px"></label>
+                <label>Samples <input type="range" id="sampleCount" min="100" max="800" value="300" style="width:80px"></label>
+                <button id="regenerateBtn" class="secondary" style="width:100%">🎲 Regenerate Dataset</button>
+            </div>
+        </div>
+        <div class="log-card" style="grid-column: 3;">
+            <h3>📜 Training Log</h3>
+            <div id="logContainer"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== MATH UTILS =====
+function relu(x) { return Math.max(0, x); }
+function reluDeriv(x) { return x > 0 ? 1 : 0; }
+function softmax(logits) {
+    const max = Math.max(...logits);
+    const exps = logits.map(z => Math.exp(z - max));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    return exps.map(e => e / sum);
+}
+function argmax(arr) {
+    let best = 0;
+    for (let i = 1; i < arr.length; i++) if (arr[i] > arr[best]) best = i;
+    return best;
+}
+function randn() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ===== 2D CONVOLUTION =====
+function conv2d(input, kernel, padVal) {
+    // input: [rows][cols], kernel: [kr][kc]
+    // Returns [rows][cols] (with padding = floor(kh/2), stride=1)
+    const H = input.length, W = input[0].length;
+    const KH = kernel.length, KW = kernel[0].length;
+    const padH = Math.floor(KH/2), padW = Math.floor(KW/2);
+    const outH = H, outW = W;
+    const padded = [];
+    for (let i = 0; i < H + 2*padH; i++) {
+        padded[i] = [];
+        for (let j = 0; j < W + 2*padW; j++) {
+            const ii = i - padH, jj = j - padW;
+            if (ii < 0 || ii >= H || jj < 0 || jj >= W) padded[i][j] = padVal;
+            else padded[i][j] = input[ii][jj];
+        }
+    }
+    const out = [];
+    for (let i = 0; i < outH; i++) {
+        out[i] = [];
+        for (let j = 0; j < outW; j++) {
+            let sum = 0;
+            for (let ki = 0; ki < KH; ki++)
+                for (let kj = 0; kj < KW; kj++)
+                    sum += padded[i+ki][j+kj] * kernel[ki][kj];
+            out[i][j] = sum;
+        }
+    }
+    return out;
+}
+
+function maxPool2d(input, poolSize) {
+    const H = input.length, W = input[0].length;
+    const outH = Math.floor(H / poolSize), outW = Math.floor(W / poolSize);
+    const out = [];
+    for (let i = 0; i < outH; i++) {
+        out[i] = [];
+        for (let j = 0; j < outW; j++) {
+            let maxVal = -Infinity;
+            for (let pi = 0; pi < poolSize; pi++)
+                for (let pj = 0; pj < poolSize; pj++)
+                    maxVal = Math.max(maxVal, input[i*poolSize+pi][j*poolSize+pj]);
+            out[i][j] = maxVal;
+        }
+    }
+    return out;
+}
+
+function maxPool2dWithIdx(input, poolSize) {
+    const H = input.length, W = input[0].length;
+    const outH = Math.floor(H / poolSize), outW = Math.floor(W / poolSize);
+    const out = [];
+    const idxMap = [];
+    for (let i = 0; i < outH; i++) {
+        out[i] = [];
+        idxMap[i] = [];
+        for (let j = 0; j < outW; j++) {
+            let maxVal = -Infinity;
+            let mi = -1, mj = -1;
+            for (let pi = 0; pi < poolSize; pi++)
+                for (let pj = 0; pj < poolSize; pj++)
+                    if (input[i*poolSize+pi][j*poolSize+pj] > maxVal) {
+                        maxVal = input[i*poolSize+pi][j*poolSize+pj];
+                        mi = i*poolSize+pi;
+                        mj = j*poolSize+pj;
+                    }
+            out[i][j] = maxVal;
+            idxMap[i][j] = { i: mi, j: mj };
+        }
+    }
+    return { out, idxMap };
+}
+
+// ===== CNN MODEL =====
+// Architecture:
+//   8×8 input (1 channel)
+//   Conv1: 4 filters, 3×3, pad=same, ReLU → 8×8×4
+//   Pool1: 2×2 max → 4×4×4
+//   Conv2: 8 filters, 3×3, pad=same, ReLU → 4×4×8
+//   Pool2: 2×2 max → 2×2×8  → flatten = 32
+//   FC: 32 → 8 → numClasses (softmax)
+
+class CNN {
+    constructor(numClasses = 10) {
+        this.numClasses = numClasses;
+        // Conv1: 4 filters, 3×3, 1 input channel
+        this.conv1F = this.randFilters(4, 1, 3);  // [f][ch][r][c]
+        this.conv1B = []; for (let f = 0; f < 4; f++) this.conv1B[f] = 0;
+
+        // Conv2: 8 filters, 3×3, 4 input channels
+        this.conv2F = this.randFilters(8, 4, 3);
+        this.conv2B = []; for (let f = 0; f < 8; f++) this.conv2B[f] = 0;
+
+        // FC1: 32 → 8
+        this.fc1W = this.randMat(8, 32);
+        this.fc1B = this.randVec(8);
+        // FC2: 8 → numClasses
+        this.fc2W = this.randMat(numClasses, 8);
+        this.fc2B = this.randVec(numClasses);
+
+        // Cached activations for visualization
+        this.cache = {};
+    }
+
+    randFilters(nOut, nIn, ksize) {
+        const f = [];
+        for (let o = 0; o < nOut; o++) {
+            f[o] = [];
+            for (let i = 0; i < nIn; i++) {
+                f[o][i] = [];
+                for (let r = 0; r < ksize; r++) {
+                    f[o][i][r] = [];
+                    for (let c = 0; c < ksize; c++) {
+                        f[o][i][r][c] = randn() * Math.sqrt(2 / (nIn * ksize * ksize));
+                    }
+                }
+            }
+        }
+        return f;
+    }
+
+    randMat(rows, cols) {
+        const m = [];
+        for (let r = 0; r < rows; r++) {
+            m[r] = [];
+            for (let c = 0; c < cols; c++) m[r][c] = randn() * Math.sqrt(2 / cols);
+        }
+        return m;
+    }
+    randVec(n) { const v = []; for (let i = 0; i < n; i++) v[i] = randn() * 0.05; return v; }
+
+    forward(input2d) {
+        // input: 8×8 grid of 0/1
+        const input = [input2d]; // [ch=1][r][c]
+        const cache = { input };
+
+        // === Conv1 ===
+        const conv1Out = [];
+        for (let f = 0; f < 4; f++) {
+            const fmap = conv2d(input[0], this.conv1F[f][0], 0);
+            // Apply bias + ReLU
+            const act = fmap.map(row => row.map(v => relu(v + this.conv1B[f])));
+            conv1Out[f] = act;
+        }
+        cache.conv1 = conv1Out; // [f][r][c], 8×8
+
+        // === Pool1 (2×2) ===
+        const pool1Out = [];
+        const pool1Idx = [];
+        for (let f = 0; f < 4; f++) {
+            const { out, idxMap } = maxPool2dWithIdx(conv1Out[f], 2);
+            pool1Out[f] = out;   // 4×4
+            pool1Idx[f] = idxMap;
+        }
+        cache.pool1 = pool1Out;
+        cache.pool1Idx = pool1Idx;
+
+        // === Conv2 ===
+        const conv2Out = [];
+        for (let f = 0; f < 8; f++) {
+            // Sum over input channels
+            let sumMap = [];
+            for (let r = 0; r < 4; r++) {
+                sumMap[r] = [];
+                for (let c = 0; c < 4; c++) sumMap[r][c] = 0;
+            }
+            for (let ch = 0; ch < 4; ch++) {
+                const conv = conv2d(pool1Out[ch], this.conv2F[f][ch], 0);
+                for (let r = 0; r < 4; r++)
+                    for (let c = 0; c < 4; c++)
+                        sumMap[r][c] += conv[r][c];
+            }
+            const act = sumMap.map(row => row.map(v => relu(v + this.conv2B[f])));
+            conv2Out[f] = act; // 4×4
+        }
+        cache.conv2 = conv2Out;
+
+        // === Pool2 (2×2) ===
+        const pool2Out = [];
+        const pool2Idx = [];
+        for (let f = 0; f < 8; f++) {
+            const { out, idxMap } = maxPool2dWithIdx(conv2Out[f], 2);
+            pool2Out[f] = out;   // 2×2
+            pool2Idx[f] = idxMap;
+        }
+        cache.pool2 = pool2Out;
+        cache.pool2Idx = pool2Idx;
+
+        // === Flatten ===
+        const flat = [];
+        for (let f = 0; f < 8; f++)
+            for (let r = 0; r < 2; r++)
+                for (let c = 0; c < 2; c++)
+                    flat.push(pool2Out[f][r][c]);
+        cache.flat = flat; // 32
+
+        // === FC1: 32 → 8, ReLU ===
+        const fc1z = [];
+        for (let j = 0; j < 8; j++) {
+            let sum = this.fc1B[j];
+            for (let k = 0; k < 32; k++) sum += this.fc1W[j][k] * flat[k];
+            fc1z[j] = sum;
+        }
+        const fc1a = fc1z.map(v => relu(v));
+        cache.fc1z = fc1z;
+        cache.fc1a = fc1a;
+
+        // === FC2: 8 → numClasses, softmax ===
+        const fc2z = [];
+        for (let o = 0; o < this.numClasses; o++) {
+            let sum = this.fc2B[o];
+            for (let k = 0; k < 8; k++) sum += this.fc2W[o][k] * fc1a[k];
+            fc2z[o] = sum;
+        }
+        const fc2a = softmax(fc2z);
+        cache.fc2z = fc2z;
+        cache.fc2a = fc2a;
+
+        this.cache = cache;
+        return fc2a;
+    }
+
+    backward(y) {
+        const cache = this.cache;
+        const lr = parseFloat(document.getElementById('lrRange').value);
+
+        // Gradients for FC2
+        // Softmax + cross-entropy derivative w.r.t. logits: (ŷ - onehot(y))
+        const dFc2z = cache.fc2a.map((p, k) => p - (k === y ? 1 : 0));
+        const dFc2W = dFc2z.map(dz => cache.fc1a.map(a => dz * a));
+        const dFc2B = dFc2z;
+
+        // Gradients for FC1
+        const dFc1z = [];
+        for (let j = 0; j < 8; j++) {
+            let sum = 0;
+            for (let o = 0; o < this.numClasses; o++) sum += this.fc2W[o][j] * dFc2z[o];
+            dFc1z[j] = sum * reluDeriv(cache.fc1z[j]);
+        }
+        const dFc1W = [];
+        for (let j = 0; j < 8; j++) {
+            dFc1W[j] = [];
+            for (let k = 0; k < 32; k++) dFc1W[j][k] = dFc1z[j] * cache.flat[k];
+        }
+        const dFc1B = dFc1z;
+
+        // Gradient for flattened layer
+        const dFlat = [];
+        for (let k = 0; k < 32; k++) {
+            let sum = 0;
+            for (let j = 0; j < 8; j++) sum += this.fc1W[j][k] * dFc1z[j];
+            dFlat[k] = sum;
+        }
+
+        // Unflatten to pool2: [f][r][c] 2×2×8
+        const dPool2 = [];
+        let idx = 0;
+        for (let f = 0; f < 8; f++) {
+            dPool2[f] = [];
+            for (let r = 0; r < 2; r++) {
+                dPool2[f][r] = [];
+                for (let c = 0; c < 2; c++) {
+                    dPool2[f][r][c] = dFlat[idx++];
+                }
+            }
+        }
+
+        // Backprop through Pool2 (max pooling — route gradient to max position)
+        const dConv2 = [];
+        for (let f = 0; f < 8; f++) {
+            dConv2[f] = [];
+            for (let r = 0; r < 4; r++) {
+                dConv2[f][r] = [];
+                for (let c = 0; c < 4; c++) dConv2[f][r][c] = 0;
+            }
+            const idxMap = cache.pool2Idx[f];
+            for (let r = 0; r < 2; r++) {
+                for (let c = 0; c < 2; c++) {
+                    const maxPos = idxMap[r][c];
+                    dConv2[f][maxPos.i][maxPos.j] = dPool2[f][r][c];
+                }
+            }
+        }
+
+        // Backprop through Conv2 (ReLU)
+        for (let f = 0; f < 8; f++) {
+            for (let r = 0; r < 4; r++)
+                for (let c = 0; c < 4; c++)
+                    dConv2[f][r][c] *= reluDeriv(cache.conv2[f][r][c]);
+        }
+
+        // Compute dW for Conv2 filters + dB
+        const dConv2F = []; // [f][ch][kr][kc]
+        const dConv2B = [];
+        for (let f = 0; f < 8; f++) {
+            dConv2F[f] = [];
+            dConv2B[f] = 0;
+            for (let ch = 0; ch < 4; ch++) {
+                dConv2F[f][ch] = [];
+                for (let kr = 0; kr < 3; kr++) {
+                    dConv2F[f][ch][kr] = [];
+                    for (let kc = 0; kc < 3; kc++) {
+                        dConv2F[f][ch][kr][kc] = 0;
+                    }
+                }
+            }
+        }
+        // For each filter f, each channel ch, accumulate gradient over spatial positions
+        for (let f = 0; f < 8; f++) {
+            dConv2B[f] = 0;
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 4; c++) {
+                    dConv2B[f] += dConv2[f][r][c];
+                    for (let ch = 0; ch < 4; ch++) {
+                        for (let kr = 0; kr < 3; kr++) {
+                            for (let kc = 0; kc < 3; kc++) {
+                                const pr = r + kr - 1;
+                                const pc = c + kc - 1;
+                                let inputVal = 0;
+                                if (pr >= 0 && pr < 4 && pc >= 0 && pc < 4) {
+                                    inputVal = cache.pool1[ch][pr][pc];
+                                }
+                                dConv2F[f][ch][kr][kc] += dConv2[f][r][c] * inputVal;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Backprop through Pool1
+        const dPool1 = [];
+        for (let f = 0; f < 4; f++) {
+            dPool1[f] = [];
+            for (let r = 0; r < 8; r++) {
+                dPool1[f][r] = [];
+                for (let c = 0; c < 8; c++) dPool1[f][r][c] = 0;
+            }
+            // For each filter f in conv2, accumulate gradient contribution
+            for (let f2 = 0; f2 < 8; f2++) {
+                // This conv2 filter takes pool1[f] as channel f input
+                // We need to backprop through conv2's convolution
+                for (let r = 0; r < 4; r++) {
+                    for (let c = 0; c < 4; c++) {
+                        const grad = dConv2[f2][r][c];
+                        for (let kr = 0; kr < 3; kr++) {
+                            for (let kc = 0; kc < 3; kc++) {
+                                const pr = r + kr - 1;
+                                const pc = c + kc - 1;
+                                if (pr >= 0 && pr < 4 && pc >= 0 && pc < 4) {
+                                    // Need to index the correct channel of conv2 filter
+                                    dPool1[f][pr][pc] += this.conv2F[f2][f][kr][kc] * grad;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply ReLU deriv from conv1
+        for (let f = 0; f < 4; f++) {
+            for (let r = 0; r < 8; r++)
+                for (let c = 0; c < 8; c++)
+                    dPool1[f][r][c] *= reluDeriv(cache.conv1[f][r][c]);
+        }
+
+        // Backprop through Conv1 to get dConv1F
+        const dConv1F = [];
+        const dConv1B = [];
+        for (let f = 0; f < 4; f++) {
+            dConv1F[f] = [];
+            dConv1B[f] = 0;
+            for (let ch = 0; ch < 1; ch++) {
+                dConv1F[f][ch] = [];
+                for (let kr = 0; kr < 3; kr++) {
+                    dConv1F[f][ch][kr] = [];
+                    for (let kc = 0; kc < 3; kc++) dConv1F[f][ch][kr][kc] = 0;
+                }
+            }
+        }
+
+        for (let f = 0; f < 4; f++) {
+            dConv1B[f] = 0;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    dConv1B[f] += dPool1[f][r][c];
+                    for (let kr = 0; kr < 3; kr++) {
+                        for (let kc = 0; kc < 3; kc++) {
+                            const pr = r + kr - 1;
+                            const pc = c + kc - 1;
+                            let inputVal = 0;
+                            if (pr >= 0 && pr < 8 && pc >= 0 && pc < 8) {
+                                inputVal = cache.input[0][pr][pc];
+                            }
+                            dConv1F[f][0][kr][kc] += dPool1[f][r][c] * inputVal;
+                        }
+                    }
+                }
+            }
+        }
+
+        // === UPDATE WEIGHTS ===
+        // Conv1
+        const n1 = 8*8;
+        for (let f = 0; f < 4; f++) {
+            this.conv1B[f] -= lr * dConv1B[f] / n1;
+            for (let kr = 0; kr < 3; kr++)
+                for (let kc = 0; kc < 3; kc++)
+                    this.conv1F[f][0][kr][kc] -= lr * dConv1F[f][0][kr][kc] / n1;
+        }
+
+        // Conv2
+        const n2 = 4*4;
+        for (let f = 0; f < 8; f++) {
+            this.conv2B[f] -= lr * dConv2B[f] / n2;
+            for (let ch = 0; ch < 4; ch++)
+                for (let kr = 0; kr < 3; kr++)
+                    for (let kc = 0; kc < 3; kc++)
+                        this.conv2F[f][ch][kr][kc] -= lr * dConv2F[f][ch][kr][kc] / n2;
+        }
+
+        // FC1
+        for (let j = 0; j < 8; j++) {
+            this.fc1B[j] -= lr * dFc1B[j];
+            for (let k = 0; k < 32; k++)
+                this.fc1W[j][k] -= lr * dFc1W[j][k];
+        }
+
+        // FC2
+        for (let o = 0; o < this.numClasses; o++) {
+            this.fc2B[o] -= lr * dFc2B[o];
+            for (let k = 0; k < 8; k++)
+                this.fc2W[o][k] -= lr * dFc2W[o][k];
+        }
+    }
+
+    predict(input2d) {
+        return this.forward(input2d);
+    }
+}
+
+// ===== DATA GENERATION =====
+// We generate 8×8 digit glyphs (0-9, seven-segment style) with per-pixel noise.
+// Segments: a=top, b=topRight, c=bottomRight, d=bottom, e=bottomLeft, f=topLeft, g=middle.
+// Horizontal bars span cols 1-6 (row 0/3/6); verticals occupy col 1 (left) and col 6 (right).
+
+function buildDigitGrid(segments) {
+    const grid = [];
+    for (let r = 0; r < 8; r++) grid[r] = [0,0,0,0,0,0,0,0];
+    if (segments.has('a')) for (let c = 1; c <= 6; c++) grid[0][c] = 1;
+    if (segments.has('f')) { grid[1][1] = 1; grid[2][1] = 1; }
+    if (segments.has('b')) { grid[1][6] = 1; grid[2][6] = 1; }
+    if (segments.has('g')) for (let c = 1; c <= 6; c++) grid[3][c] = 1;
+    if (segments.has('e')) { grid[4][1] = 1; grid[5][1] = 1; }
+    if (segments.has('c')) { grid[4][6] = 1; grid[5][6] = 1; }
+    if (segments.has('d')) for (let c = 1; c <= 6; c++) grid[6][c] = 1;
+    return grid;
+}
+
+const DIGIT_SEGMENTS = [
+    'abcdef',  // 0
+    'bc',      // 1
+    'abged',   // 2
+    'abgcd',   // 3
+    'fgbc',    // 4
+    'afgcd',   // 5
+    'afgecd',  // 6
+    'abc',     // 7
+    'abcdefg', // 8
+    'abcdfg',  // 9
+];
+const DIGIT_PATTERNS = DIGIT_SEGMENTS.map(s => buildDigitGrid(new Set(s.split(''))));
+
+function generateDigitDataset(n, numClasses, noiseLevel) {
+    const data = [];
+    const noiseScale = noiseLevel / 100;
+
+    for (let i = 0; i < n; i++) {
+        const label = Math.floor(Math.random() * numClasses);
+        const basePattern = DIGIT_PATTERNS[label];
+        const grid = [];
+        for (let r = 0; r < 8; r++) {
+            grid[r] = [];
+            for (let c = 0; c < 8; c++) {
+                const val = basePattern[r][c] + (Math.random() - 0.5) * noiseScale;
+                grid[r][c] = clamp(val, 0, 1);
+            }
+        }
+        data.push({ grid, label });
+    }
+
+    // Shuffle
+    for (let i = data.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [data[i], data[j]] = [data[j], data[i]];
+    }
+
+    return { data, numClasses };
+}
+
+// ===== RENDERING =====
+const inputCanvas = document.getElementById('inputCanvas');
+const inputCtx = inputCanvas.getContext('2d');
+const fmCanvas = document.getElementById('featureMapCanvas');
+const fmCtx = fmCanvas.getContext('2d');
+const filterCanvas = document.getElementById('filterCanvas');
+const filterCtx = filterCanvas.getContext('2d');
+const filterCanvas2 = document.getElementById('filterCanvas2');
+const filterCtx2 = filterCanvas2.getContext('2d');
+const lossCanvas = document.getElementById('lossCanvas');
+const lossCtx = lossCanvas.getContext('2d');
+
+let numClasses = 10;
+let cnn = new CNN(numClasses);
+let datasetState = generateDigitDataset(300, numClasses, 10);
+let dataset = datasetState.data;
+
+let epoch = 0;
+let loss = 0;
+let accuracy = 0;
+let running = false;
+let animId = null;
+let logs = [];
+const MAX_LOGS = 50;
+
+// For loss curve
+const lossHistory = [];
+const maxLossPoints = 400;
+
+// Current display sample index
+let currentSampleIdx = 0;
+
+function log(msg, type = '') {
+    logs.push({ msg, type, epoch });
+    if (logs.length > MAX_LOGS) logs.shift();
+    const container = document.getElementById('logContainer');
+    container.innerHTML = logs.map(l =>
+        `<div class="log-entry ${l.type}"><span class="dim">[${l.epoch}]</span> ${l.msg}</div>`
+    ).join('');
+    container.parentElement.scrollTop = container.parentElement.scrollHeight;
+}
+
+function drawInput() {
+    const w = inputCanvas.width, h = inputCanvas.height;
+    const ctx = inputCtx;
+    const cellSize = w / 8;
+    const pad = 4;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Background
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    // Get current sample
+    const sample = dataset[currentSampleIdx % dataset.length];
+
+    // Draw grid
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            const val = sample.grid[r][c];
+            const x = c * cellSize + pad;
+            const y = r * cellSize + pad;
+            const s = cellSize - pad * 2;
+
+            const gray = Math.round(val * 200 + 30);
+            ctx.fillStyle = `rgb(${gray}, ${gray}, ${Math.round(gray * 0.9 + 20)})`;
+            ctx.fillRect(x, y, s, s);
+
+            // Grid border
+            ctx.strokeStyle = '#2a2a4a';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, s, s);
+        }
+    }
+
+    // Label
+    ctx.fillStyle = '#34d399';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Digit: ${sample.label}`, 10, 20);
+
+    // Prediction — shown next to "Input Digit (8×8)", not overlaid on the canvas
+    const pred = cnn.predict(sample.grid);
+    const predClass = argmax(pred);
+    const predLabel = document.getElementById('predLabel');
+    predLabel.querySelector('span').textContent = `${predClass} (${(pred[predClass] * 100).toFixed(0)}%)`;
+    predLabel.style.color = predClass === sample.label ? '#34d399' : '#f87171';
+}
+
+function getActiveTab() {
+    const active = document.querySelector('.tab-bar button.active');
+    return active ? active.dataset.tab : 'conv1';
+}
+
+function drawFeatureMaps() {
+    const w = fmCanvas.width, h = fmCanvas.height;
+    const ctx = fmCtx;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    const sample = dataset[currentSampleIdx % dataset.length];
+    cnn.forward(sample.grid);
+    const cache = cnn.cache;
+    const tab = getActiveTab();
+
+    let maps, label, rows, cols, mapSize;
+
+    switch (tab) {
+        case 'conv1':
+            maps = cache.conv1; // [f][8][8]
+            label = 'Conv1 (ReLU) — 8×8';
+            rows = 1; cols = 4; mapSize = 60;
+            break;
+        case 'pool1':
+            maps = cache.pool1; // [f][4][4]
+            label = 'Pool1 (Max 2×2) — 4×4';
+            rows = 1; cols = 4; mapSize = 60;
+            break;
+        case 'conv2':
+            maps = cache.conv2; // [f][4][4]
+            label = 'Conv2 (ReLU) — 4×4';
+            rows = 2; cols = 4; mapSize = 55;
+            break;
+        case 'pool2':
+            maps = cache.pool2; // [f][2][2]
+            label = 'Pool2 (Max 2×2) — 2×2';
+            rows = 2; cols = 4; mapSize = 55;
+            break;
+        default:
+            maps = cache.conv1;
+            label = 'Conv1';
+            rows = 1; cols = 4; mapSize = 60;
+    }
+
+    if (!maps) return;
+
+    // Find global min/max for normalization
+    let minVal = Infinity, maxVal = -Infinity;
+    for (const fmap of maps) {
+        for (const row of fmap)
+            for (const v of row) {
+                if (v < minVal) minVal = v;
+                if (v > maxVal) maxVal = v;
+            }
+    }
+    const range = maxVal - minVal || 1;
+
+    const gap = 12;
+    const startX = 20;
+    const startY = 30;
+
+    for (let f = 0; f < maps.length; f++) {
+        const fmap = maps[f];
+        const fRows = fmap.length;
+        const fCols = fmap[0].length;
+        const cellSize = mapSize / Math.max(fRows, fCols);
+        const ox = startX + (f % cols) * (mapSize + gap);
+        const oy = startY + Math.floor(f / cols) * (mapSize + gap + 16);
+
+        // Draw feature map as pixel grid
+        for (let r = 0; r < fRows; r++) {
+            for (let c = 0; c < fCols; c++) {
+                const normVal = (fmap[r][c] - minVal) / range;
+                const gray = Math.round(normVal * 200 + 30);
+                const x = ox + c * cellSize;
+                const y = oy + r * cellSize;
+                ctx.fillStyle = `rgb(${gray}, ${Math.round(gray*0.9)}, ${Math.round(gray*0.85+20)})`;
+                ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
+            }
+        }
+
+        // Border
+        ctx.strokeStyle = '#3a3a5a';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(ox, oy, fCols * cellSize - 1, fRows * cellSize - 1);
+
+        // Label
+        ctx.fillStyle = '#667799';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`F${f}`, ox + mapSize/2, oy + mapSize + 12);
+    }
+
+    // Title
+    ctx.fillStyle = '#8899bb';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, 10, 14);
+
+    // FC output
+    if (cache.fc2a !== undefined) {
+        const predClass = argmax(cache.fc2a);
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Pred: ${predClass} (${(cache.fc2a[predClass] * 100).toFixed(0)}%)`, w - 10, 14);
+    }
+}
+
+function drawFilters() {
+    // Conv1 filters: 4 × 3×3
+    const cw = filterCanvas.width, ch = filterCanvas.height;
+    const ctx = filterCtx;
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, cw, ch);
+
+    const size = 50;
+    const gap = 12;
+    const startX = 10;
+
+    let maxW = 0;
+    for (let f = 0; f < 4; f++)
+        for (let r = 0; r < 3; r++)
+            for (let c = 0; c < 3; c++)
+                maxW = Math.max(maxW, Math.abs(cnn.conv1F[f][0][r][c]));
+    if (maxW === 0) maxW = 1;
+
+    for (let f = 0; f < 4; f++) {
+        const ox = startX + f * (size + gap);
+        const oy = 18;
+        const cellSize = size / 3;
+
+        for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) {
+                const val = cnn.conv1F[f][0][r][c] / maxW;
+                const norm = (val + 1) / 2; // 0..1
+                const gray = Math.round(norm * 180 + 40);
+                const x = ox + c * cellSize;
+                const y = oy + r * cellSize;
+                ctx.fillStyle = `rgb(${Math.round(gray*1.1)}, ${gray}, ${Math.round(gray*0.9)})`;
+                ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
+            }
+        }
+
+        ctx.strokeStyle = '#3a3a5a';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(ox, oy, size - 1, size - 1);
+
+        ctx.fillStyle = '#667799';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`F${f}`, ox + size/2, oy + size + 12);
+    }
+
+    // Conv2 filters: 8 × 3×3 × 4ch
+    const cw2 = filterCanvas2.width, ch2 = filterCanvas2.height;
+    const ctx2 = filterCtx2;
+    ctx2.clearRect(0, 0, cw2, ch2);
+    ctx2.fillStyle = '#0a0a14';
+    ctx2.fillRect(0, 0, cw2, ch2);
+
+    let maxW2 = 0;
+    for (let f = 0; f < 8; f++)
+        for (let ch = 0; ch < 4; ch++)
+            for (let r = 0; r < 3; r++)
+                for (let c = 0; c < 3; c++)
+                    maxW2 = Math.max(maxW2, Math.abs(cnn.conv2F[f][ch][r][c]));
+    if (maxW2 === 0) maxW2 = 1;
+
+    const chSize = 11;             // px per kernel cell
+    const chGap = 2;                // gap between the 4 channels within a filter
+    const channelBlock = chSize * 3; // one channel's 3×3 kernel, in px
+    const filterSize = channelBlock * 2 + chGap; // full 2×2 channel layout, in px
+    const fGap = 12;                 // gap between filter blocks
+    const startX2 = 12;
+    const oy = 12;
+
+    for (let f = 0; f < 8; f++) {
+        const ox = startX2 + f * (filterSize + fGap);
+
+        for (let ch = 0; ch < 4; ch++) {
+            const cx = ox + (ch % 2) * (channelBlock + chGap);
+            const cy = oy + Math.floor(ch / 2) * (channelBlock + chGap);
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const val = cnn.conv2F[f][ch][r][c] / maxW2;
+                    const norm = (val + 1) / 2;
+                    const gray = Math.round(norm * 180 + 40);
+                    const x = cx + c * chSize;
+                    const y = cy + r * chSize;
+                    ctx2.fillStyle = `rgb(${Math.round(gray*1.1)}, ${gray}, ${Math.round(gray*0.9)})`;
+                    ctx2.fillRect(x, y, chSize - 1, chSize - 1);
+                }
+            }
+        }
+
+        ctx2.strokeStyle = '#3a3a5a';
+        ctx2.lineWidth = 1;
+        ctx2.strokeRect(ox, oy, filterSize, filterSize);
+
+        ctx2.fillStyle = '#667799';
+        ctx2.font = '9px sans-serif';
+        ctx2.textAlign = 'center';
+        ctx2.fillText(`F${f}`, ox + filterSize / 2, oy + filterSize + 12);
+    }
+}
+
+function drawLossCurve() {
+    const w = lossCanvas.width, h = lossCanvas.height;
+    const ctx = lossCtx;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    const pad = { t: 15, r: 15, b: 25, l: 40 };
+    const pw = w - pad.l - pad.r;
+    const ph = h - pad.t - pad.b;
+
+    if (lossHistory.length < 2) {
+        ctx.fillStyle = '#556688';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Collecting data...', w/2, h/2);
+        return;
+    }
+
+    const data = lossHistory;
+    const maxLen = maxLossPoints;
+    const start = Math.max(0, data.length - maxLen);
+    const visible = data.slice(start);
+
+    let minLoss = Infinity, maxLoss = -Infinity;
+    for (const d of visible) {
+        if (d.loss < minLoss) minLoss = d.loss;
+        if (d.loss > maxLoss) maxLoss = d.loss;
+    }
+    const range = maxLoss - minLoss || 1;
+
+    // Grid lines
+    ctx.strokeStyle = '#1a1a3a';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+        const y = pad.t + (i/4) * ph;
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(pad.l + pw, y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#445566';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText((maxLoss - (i/4)*range).toFixed(2), pad.l - 5, y + 3);
+    }
+
+    // Loss curve
+    ctx.beginPath();
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < visible.length; i++) {
+        const x = pad.l + (i / Math.max(visible.length - 1, 1)) * pw;
+        const y = pad.t + (1 - (visible[i].loss - minLoss) / range) * ph;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Accuracy overlay
+    ctx.beginPath();
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    for (let i = 0; i < visible.length; i++) {
+        const x = pad.l + (i / Math.max(visible.length - 1, 1)) * pw;
+        const y = pad.t + (1 - visible[i].acc) * ph;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Labels
+    ctx.fillStyle = '#60a5fa';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Loss', pad.l + 5, pad.t + 12);
+
+    ctx.fillStyle = '#34d399';
+    ctx.fillText('Acc', pad.l + 5, pad.t + 22);
+
+    ctx.fillStyle = '#556688';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Epoch', pad.l + pw/2, h - 5);
+
+    // X axis values
+    ctx.fillStyle = '#445566';
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center';
+    if (visible.length > 0) {
+        const firstEpoch = visible[0].epoch;
+        const lastEpoch = visible[visible.length-1].epoch;
+        ctx.fillText(firstEpoch, pad.l, h - 12);
+        ctx.fillText(lastEpoch, pad.l + pw, h - 12);
+    }
+}
+
+function updateDisplay() {
+    drawInput();
+    drawFeatureMaps();
+    drawFilters();
+    drawLossCurve();
+}
+
+function updateStats() {
+    document.getElementById('epochDisplay').textContent = epoch;
+    document.getElementById('lossDisplay').textContent = loss.toFixed(4);
+    document.getElementById('accDisplay').textContent = (accuracy * 100).toFixed(1) + '%';
+    const gl = document.getElementById('patternLabel').querySelector('span');
+    gl.textContent = `0–${numClasses - 1}`;
+}
+
+function trainStep() {
+    const shuffled = [...dataset];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    let totalLoss = 0;
+    let correct = 0;
+
+    const eps = 1e-12;
+    for (const d of shuffled) {
+        const pred = cnn.forward(d.grid);
+        cnn.backward(d.label);
+
+        totalLoss += -Math.log(Math.max(pred[d.label], eps));
+        correct += argmax(pred) === d.label ? 1 : 0;
+    }
+
+    loss = totalLoss / dataset.length;
+    accuracy = correct / dataset.length;
+    epoch++;
+
+    // Record for loss curve (downsample to avoid too many points)
+    if (epoch % 2 === 0 || lossHistory.length === 0) {
+        lossHistory.push({ epoch, loss, acc: accuracy });
+        if (lossHistory.length > maxLossPoints) lossHistory.shift();
+    }
+
+    if (epoch === 1 || epoch % 20 === 0 || epoch % 50 === 0) {
+        log(`loss=${loss.toFixed(4)}  acc=${(accuracy*100).toFixed(1)}%  lr=${parseFloat(document.getElementById('lrRange').value).toFixed(3)}`);
+    }
+
+    updateStats();
+    updateDisplay();
+}
+
+function resetAll() {
+    cnn = new CNN(numClasses);
+    epoch = 0;
+    loss = 0;
+    accuracy = 0;
+    logs = [];
+    lossHistory.length = 0;
+    document.getElementById('logContainer').innerHTML = '';
+    log(`CNN initialized. Architecture: 8×8→Conv→Pool→Conv→Pool→FC→${numClasses}`);
+    updateStats();
+    updateDisplay();
+}
+
+function regenerateData() {
+    const n = parseInt(document.getElementById('sampleCount').value);
+    numClasses = parseInt(document.getElementById('numClassesRange').value);
+    const noise = parseInt(document.getElementById('noiseRange').value);
+    datasetState = generateDigitDataset(n, numClasses, noise);
+    dataset = datasetState.data;
+    currentSampleIdx = 0;
+    log(`Regenerated ${dataset.length} samples — digit classes: 0–${numClasses - 1}, noise: ${noise}%`);
+    // Reset network (output layer size depends on numClasses)
+    cnn = new CNN(numClasses);
+    epoch = 0;
+    loss = 0;
+    accuracy = 0;
+    lossHistory.length = 0;
+    updateStats();
+    updateDisplay();
+}
+
+// ===== TAB SWITCHING =====
+document.querySelectorAll('.tab-bar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        drawFeatureMaps();
+    });
+});
+
+// ===== EVENT BINDING =====
+const playBtn = document.getElementById('playBtn');
+playBtn.addEventListener('click', () => {
+    running = !running;
+    playBtn.textContent = running ? '⏸ Pause' : '▶ Play';
+    if (running) {
+        if (epoch === 0) log('Training started...');
+        function step() {
+            if (!running) return;
+            const speed = parseInt(document.getElementById('speedRange').value);
+            for (let i = 0; i < speed; i++) trainStep();
+            animId = requestAnimationFrame(step);
+        }
+        animId = requestAnimationFrame(step);
+    } else {
+        if (animId) cancelAnimationFrame(animId);
+    }
+});
+
+document.getElementById('stepBtn').addEventListener('click', () => {
+    if (epoch === 0) log('Training started (step-by-step)...');
+    for (let i = 0; i < 5; i++) trainStep();
+});
+
+document.getElementById('resetBtn').addEventListener('click', resetAll);
+document.getElementById('regenerateBtn').addEventListener('click', regenerateData);
+
+// Cycle through samples when clicking input
+inputCanvas.addEventListener('click', () => {
+    currentSampleIdx = (currentSampleIdx + 1) % dataset.length;
+    updateDisplay();
+});
+
+// Also cycle with right-click (backwards)
+inputCanvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    currentSampleIdx = (currentSampleIdx - 1 + dataset.length) % dataset.length;
+    updateDisplay();
+});
+
+// Digit classes slider
+const numClassesRange = document.getElementById('numClassesRange');
+numClassesRange.addEventListener('input', () => {
+    document.getElementById('numClassesValue').textContent = numClassesRange.value;
+});
+numClassesRange.addEventListener('change', regenerateData);
+
+// Init
+log('CNN initialized: 8×8 → Conv1(4×3×3) → Pool1 → Conv2(8×3×3×4) → Pool2 → FC(32→8→10)');
+log('▶ Click Play to train. Click input image to cycle samples.');
+updateDisplay();
+updateStats();
+
+console.log('CNN Training Visualizer loaded');
+</script>
+</body>
+</html>
